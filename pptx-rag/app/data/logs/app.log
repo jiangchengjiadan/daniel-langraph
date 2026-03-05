@@ -1,0 +1,8 @@
+2026-03-04 17:31:04 | INFO     | chain | RAGChain initialized (singleton)
+2026-03-04 17:31:04 | INFO     | streamlit_app | RAGChain initialized (singleton)
+2026-03-04 17:31:04 | INFO     | chain | [WARMUP] 开始预热LLM连接...
+2026-03-04 17:31:13 | INFO     | chain | [WARMUP] LLM连接成功，API正常
+2026-03-04 17:31:13 | INFO     | image_server | Image server starting on port 8080
+2026-03-04 17:31:13 | INFO     | image_server | Serving images from: data/images
+2026-03-04 17:31:13 | INFO     | image_server | Image server started in background
+2026-03-04 17:31:13 | INFO     | streamlit_app | Image server started
