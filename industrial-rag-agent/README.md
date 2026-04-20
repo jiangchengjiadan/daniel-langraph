@@ -43,8 +43,8 @@
 |------|------|
 | 前端 | React 18 + TypeScript + Vite |
 | 后端 | FastAPI + LangChain + LangGraph |
-| LLM | Ollama (qwen3:8B) |
-| Embedding | Ollama (bge-m3:latest) |
+| LLM | OpenAI-compatible API (`gpt-4o-mini` by default) |
+| Embedding | OpenAI-compatible API (`text-embedding-3-small` by default) |
 | 向量数据库 | ChromaDB |
 | 日志 | structlog |
 
@@ -112,11 +112,7 @@ industrial-rag-agent/
 确保已安装：
 - Python 3.10+
 - Node.js 18+
-- [Ollama](https://ollama.com/) 并运行：
-  ```bash
-  ollama run qwen3:8B
-  ollama run bge-m3:latest
-  ```
+- 可访问 OpenAI 兼容 API，并准备好 `OPENAI_API_KEY`
 
 ### 2. 后端设置
 
@@ -130,6 +126,13 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 安装依赖
 pip install -r requirements.txt
+
+# 配置模型 API
+cat > ../.env <<'EOF'
+OPENAI_API_KEY="your-api-key"
+LLM_MODEL="gpt-4o-mini"
+EMBEDDING_MODEL="text-embedding-3-small"
+EOF
 
 # 启动后端
 cd ..
@@ -220,11 +223,13 @@ npm run dev
 
 ```env
 # LLM 配置
-LLM_MODEL="qwen3:8B"
-LLM_BASE_URL="http://localhost:11434"
+OPENAI_API_KEY="your-api-key"
+# 可选：使用兼容 OpenAI SDK 的第三方服务时配置
+OPENAI_BASE_URL="https://api.openai.com/v1"
+LLM_MODEL="gpt-4o-mini"
 
 # Embedding 配置
-EMBEDDING_MODEL="bge-m3:latest"
+EMBEDDING_MODEL="text-embedding-3-small"
 
 # 向量数据库
 CHROMA_PERSIST_DIR="./backend/knowledge/chroma_db"
@@ -233,5 +238,3 @@ CHROMA_PERSIST_DIR="./backend/knowledge/chroma_db"
 LOG_LEVEL="DEBUG"
 LOG_FILE="./logs/app.log"
 ```
-
-

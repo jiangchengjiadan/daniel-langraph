@@ -1,11 +1,10 @@
 """查询增强器 - 智能问题重写"""
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_ollama import ChatOllama
 
 from backend.models.state import ConversationState
-from backend.config.settings import settings
 from backend.logging.config import get_logger
+from backend.models.providers import get_llm
 
 logger = get_logger(__name__)
 
@@ -67,12 +66,7 @@ def enhance_user_query(state: ConversationState) -> ConversationState:
 
         # 生成增强查询
         enhancement_prompt = ChatPromptTemplate.from_messages(context_messages)
-        llm = ChatOllama(
-            model=settings.LLM_MODEL,
-            base_url=settings.LLM_BASE_URL,
-            temperature=0.1,
-            reasoning=False,
-        )
+        llm = get_llm(temperature=0.1)
 
         response = llm.invoke(enhancement_prompt.format())
         enhanced_question = response.content.strip()

@@ -1,11 +1,11 @@
 """查询优化器 - 自适应搜索改进"""
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_ollama import ChatOllama
 
 from backend.models.state import ConversationState
 from backend.config.settings import settings
 from backend.logging.config import get_logger
+from backend.models.providers import get_llm
 
 logger = get_logger(__name__)
 
@@ -45,12 +45,7 @@ def optimize_search_query(state: ConversationState) -> ConversationState:
     )
 
     optimization_chain = ChatPromptTemplate.from_messages([optimization_prompt, optimization_request])
-    llm = ChatOllama(
-        model=settings.LLM_MODEL,
-        base_url=settings.LLM_BASE_URL,
-        temperature=0.2,
-        reasoning=False,
-    )
+    llm = get_llm(temperature=0.2)
 
     formatted_prompt = optimization_chain.format()
     response = llm.invoke(formatted_prompt)

@@ -46,6 +46,23 @@ def route_by_document_quality(state: ConversationState) -> str:
         return "optimize_query"
 
 
+def route_by_document_quality_for_stream(state: ConversationState) -> str:
+    """流式接口使用：检索完成后交给 API 层流式生成。"""
+    logger.debug("流式文档质量路由决策")
+
+    optimization_attempts = state.get("optimization_attempts", 0)
+
+    if state.get("should_generate", False):
+        logger.debug("→ 交给流式响应")
+        return "stream_response"
+    elif optimization_attempts >= 2:
+        logger.debug("→ 达到最大优化次数，无结果处理")
+        return "handle_no_results"
+    else:
+        logger.debug("→ 优化查询")
+        return "optimize_query"
+
+
 def build_workflow():
     """构建完整的RAG Agent工作流"""
     logger.info("构建工作流...")
@@ -106,9 +123,53 @@ def build_workflow():
     return workflow
 
 
+def build_streaming_workflow():
+    """构建流式接口专用工作流：不在图内执行最终生成。"""
+    logger.info("构建流式工作流...")
+
+    workflow = StateGraph(ConversationState)
+
+    workflow.add_node("enhance_query", enhance_user_query)
+    workflow.add_node("validate_topic", validate_topic_relevance)
+    workflow.add_node("handle_off_topic", handle_off_topic_queries)
+    workflow.add_node("fetch_content", fetch_relevant_content)
+    workflow.add_node("assess_relevance", assess_document_relevance)
+    workflow.add_node("optimize_query", optimize_search_query)
+    workflow.add_node("handle_no_results", handle_no_relevant_results)
+
+    workflow.add_edge("enhance_query", "validate_topic")
+    workflow.add_conditional_edges(
+        "validate_topic",
+        route_by_topic,
+        {
+            "fetch_content": "fetch_content",
+            "handle_off_topic": "handle_off_topic",
+        }
+    )
+    workflow.add_edge("fetch_content", "assess_relevance")
+    workflow.add_conditional_edges(
+        "assess_relevance",
+        route_by_document_quality_for_stream,
+        {
+            "stream_response": END,
+            "optimize_query": "optimize_query",
+            "handle_no_results": "handle_no_results",
+        }
+    )
+    workflow.add_edge("optimize_query", "fetch_content")
+    workflow.add_edge("handle_no_results", END)
+    workflow.add_edge("handle_off_topic", END)
+    workflow.set_entry_point("enhance_query")
+
+    logger.info("流式工作流构建完成")
+    return workflow
+
+
 # 全局工作流实例
 _workflow = None
 _compiled_workflow = None
+_streaming_workflow = None
+_compiled_streaming_workflow = None
 
 
 def get_workflow():
@@ -123,3 +184,16 @@ def get_workflow():
         logger.info("工作流编译完成")
 
     return _compiled_workflow
+
+
+def get_streaming_workflow():
+    """获取流式接口专用的编译工作流"""
+    global _streaming_workflow, _compiled_streaming_workflow
+
+    if _compiled_streaming_workflow is None:
+        _streaming_workflow = build_streaming_workflow()
+        memory = MemorySaver()
+        _compiled_streaming_workflow = _streaming_workflow.compile(checkpointer=memory)
+        logger.info("流式工作流编译完成")
+
+    return _compiled_streaming_workflow

@@ -2,11 +2,10 @@
 import re
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_ollama import ChatOllama
 
 from backend.models.state import ConversationState
-from backend.config.settings import settings
 from backend.logging.config import get_logger
+from backend.models.providers import get_llm
 
 logger = get_logger(__name__)
 
@@ -34,12 +33,7 @@ def assess_document_relevance(state: ConversationState) -> ConversationState:
 请直接回答：RELEVANT 或 IRRELEVANT，不要有其他内容。"""
     )
 
-    llm = ChatOllama(
-        model=settings.LLM_MODEL,
-        base_url=settings.LLM_BASE_URL,
-        temperature=0,
-        reasoning=False,
-    )
+    llm = get_llm(temperature=0)
 
     relevant_documents = []
 

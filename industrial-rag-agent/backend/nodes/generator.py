@@ -1,12 +1,10 @@
 """响应生成器 - 上下文感知回答"""
-from typing import List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_ollama import ChatOllama
 
 from backend.models.state import ConversationState
-from backend.config.settings import settings
 from backend.logging.config import get_logger
+from backend.models.providers import get_llm
 
 logger = get_logger(__name__)
 
@@ -65,12 +63,7 @@ def generate_contextual_response(state: ConversationState) -> ConversationState:
 请给出专业、准确的回答："""
 
     response_prompt = ChatPromptTemplate.from_template(response_template)
-    llm = ChatOllama(
-        model=settings.LLM_MODEL,
-        base_url=settings.LLM_BASE_URL,
-        temperature=0.3,
-        reasoning=False,
-    )
+    llm = get_llm(temperature=0.3)
 
     # 生成响应
     response_chain = response_prompt | llm

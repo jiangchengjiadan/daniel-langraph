@@ -13,12 +13,13 @@ class Settings:
     # 项目根目录
     PROJECT_ROOT: Path = Path(__file__).parent.parent.parent.parent
 
-    # LLM 配置
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen3:8B")
-    LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "http://localhost:11434")
+    # API 模型配置（兼容 OpenAI SDK 的服务）
+    OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
+    OPENAI_BASE_URL: str | None = os.getenv("OPENAI_BASE_URL")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
     # Embedding 配置
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
     # 向量数据库配置
     CHROMA_PERSIST_DIR: Path = Path(os.getenv("CHROMA_PERSIST_DIR", "./backend/knowledge/chroma_db"))

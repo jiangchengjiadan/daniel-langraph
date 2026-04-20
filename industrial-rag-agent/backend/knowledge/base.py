@@ -1,13 +1,19 @@
 """知识库模块 - 电机售后知识库初始化"""
-import logging
+import re
 from langchain_core.documents import Document
-from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 
 from backend.config.settings import settings
 from backend.logging.config import get_logger
+from backend.models.providers import get_embeddings
 
 logger = get_logger(__name__)
+
+
+def _chroma_collection_name() -> str:
+    """按 embedding 模型隔离 collection，避免不同向量维度冲突。"""
+    model_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", settings.EMBEDDING_MODEL).strip("_")
+    return f"motor_knowledge_{model_name or 'default'}"[:63].strip("_-")
 
 
 def create_motor_knowledge_documents() -> list:
@@ -381,10 +387,7 @@ def initialize_vector_store():
     logger.info("初始化向量数据库...")
 
     # 初始化嵌入模型
-    embeddings = OllamaEmbeddings(
-        model=settings.EMBEDDING_MODEL,
-        base_url=settings.LLM_BASE_URL,
-    )
+    embeddings = get_embeddings()
 
     # 创建知识库文档
     documents = create_motor_knowledge_documents()
@@ -394,6 +397,7 @@ def initialize_vector_store():
         documents=documents,
         embedding=embeddings,
         persist_directory=str(settings.CHROMA_PERSIST_DIR),
+        collection_name=_chroma_collection_name(),
     )
 
     # 创建检索器

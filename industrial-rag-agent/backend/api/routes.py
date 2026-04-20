@@ -3,14 +3,13 @@ from typing import Optional, AsyncGenerator
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage, AIMessageChunk
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_ollama import ChatOllama
 
-from backend.workflow.builder import get_workflow
-from backend.config.settings import settings
+from backend.workflow.builder import get_workflow, get_streaming_workflow
 from backend.logging.config import get_logger
+from backend.models.providers import get_llm
 
 logger = get_logger(__name__)
 
@@ -31,12 +30,7 @@ class ChatResponse(BaseModel):
 
 def create_streaming_llm() -> BaseChatModel:
     """创建支持流式的 LLM"""
-    return ChatOllama(
-        model=settings.LLM_MODEL,
-        base_url=settings.LLM_BASE_URL,
-        temperature=0.3,
-        reasoning=False,
-    )
+    return get_llm(temperature=0.3)
 
 
 async def generate_streaming_response(
@@ -142,7 +136,7 @@ async def chat_stream(request: ChatRequest):
     logger.info(f"收到流式消息: {request.message[:50]}... (thread_id: {request.thread_id})")
 
     try:
-        workflow = get_workflow()
+        workflow = get_streaming_workflow()
         input_state = {
             "current_query": HumanMessage(content=request.message)
         }
@@ -152,7 +146,7 @@ async def chat_stream(request: ChatRequest):
             }
         }
 
-        # 执行工作流获取相关文档
+        # 执行工作流获取相关文档；最终回答由下面的 SSE 流式生成。
         result = workflow.invoke(input_state, config=config)
 
         conversation_history = result.get("conversation_history", [])
@@ -167,14 +161,35 @@ async def chat_stream(request: ChatRequest):
             doc_context += f"\n【文档{i+1}】来源：{source}（{category}）\n"
             doc_context += f"{doc.page_content}\n"
 
-        # 生成流式响应
         async def event_generator():
+            # 无关话题或无检索结果由工作流中的静态 handler 直接返回。
+            if not relevant_docs:
+                final_response = ""
+                if conversation_history:
+                    last_message = conversation_history[-1]
+                    if isinstance(last_message, AIMessage):
+                        final_response = last_message.content
+
+                yield f"data: {final_response or '抱歉，未能获取有效响应。'}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            assistant_content = ""
             async for chunk in generate_streaming_response(
                 conversation_history=conversation_history,
                 doc_context=doc_context,
                 current_question=enhanced_query or request.message
             ):
+                if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
+                    assistant_content += chunk.replace("data: ", "", 1).rstrip("\n")
                 yield chunk
+
+            if assistant_content:
+                updated_history = [*conversation_history, AIMessage(content=assistant_content)]
+                workflow.update_state(
+                    config,
+                    {"conversation_history": updated_history},
+                )
 
         return StreamingResponse(
             event_generator(),
