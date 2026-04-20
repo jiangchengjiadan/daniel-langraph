@@ -13,8 +13,9 @@ def test_config():
     from src.config import config
 
     print("Testing config...")
-    assert config.ollama_base_url is not None
-    assert config.ollama_model is not None
+    assert config.api_base_url is not None
+    assert config.llm_model is not None
+    assert config.embedding_model is not None
     assert config.data_dir is not None
     print("  ✓ Config loaded successfully")
 

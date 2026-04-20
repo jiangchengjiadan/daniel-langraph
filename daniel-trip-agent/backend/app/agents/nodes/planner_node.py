@@ -4,7 +4,9 @@ from langchain_openai import ChatOpenAI
 from .. import TripPlanState
 from ...models.schemas import TripPlan
 from ...config import settings
+import asyncio
 import json
+import os
 import re
 from typing import Dict, Optional, Any
 
@@ -302,20 +304,23 @@ async def itinerary_planning_node(state: TripPlanState) -> TripPlanState:
         )
 
         # 创建LLM（不需要工具）
-        import os
         api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or settings.openai_api_key
         base_url = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or settings.openai_base_url
         model = os.getenv("LLM_MODEL_ID") or os.getenv("OPENAI_MODEL") or settings.openai_model
+        llm_timeout = int(os.getenv("LLM_TIMEOUT", "60"))
 
         llm = ChatOpenAI(
             model=model,
             temperature=0.7,  # 稍高的temperature让计划更有创意
             api_key=api_key,
-            base_url=base_url
+            base_url=base_url,
+            request_timeout=llm_timeout
         )
 
         # 调用LLM生成计划
-        response = await llm.ainvoke(prompt)
+        print(f"📋 开始调用LLM生成最终行程: model={model}, timeout={llm_timeout}s", flush=True)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=llm_timeout + 5)
+        print("✅ LLM最终行程生成完成，开始提取JSON", flush=True)
 
         # 提取JSON
         itinerary_dict = extract_json_from_llm_response(response.content)
@@ -324,10 +329,13 @@ async def itinerary_planning_node(state: TripPlanState) -> TripPlanState:
             raise ValueError("无法从LLM响应中提取有效的JSON")
 
         # 标准化数据
+        print("🔧 开始标准化行程数据", flush=True)
         itinerary_dict = normalize_trip_plan_data(itinerary_dict)
 
         # 验证Pydantic模型
+        print("🔍 开始校验TripPlan数据", flush=True)
         trip_plan = TripPlan(**itinerary_dict)
+        print(f"✅ TripPlan数据校验通过: {len(trip_plan.days)}天", flush=True)
 
         # 构建执行日志
         log_entry = {

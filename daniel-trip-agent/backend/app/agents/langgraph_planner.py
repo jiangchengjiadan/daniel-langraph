@@ -1,6 +1,6 @@
 """基于 LangGraph 的旅行规划器"""
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 from . import TripPlanState
 from .nodes import (attraction_search_node,hotel_search_node,itinerary_planning_node,
                    error_handler_node,weather_query_node)
@@ -40,15 +40,16 @@ class LangGraphTripPlanner:
         graph.add_node("itinerary_planning", itinerary_planning_node)
         graph.add_node("error_handler", error_handler_node)
 
-        # 设置入口点（3个搜索节点并行执行）
-        graph.set_entry_point("attraction_search")
-        graph.set_entry_point("weather_query")
-        graph.set_entry_point("hotel_search")
+        # 从 START 扇出，3 个信息采集节点并行执行
+        graph.add_edge(START, "attraction_search")
+        graph.add_edge(START, "weather_query")
+        graph.add_edge(START, "hotel_search")
 
-        # 3个搜索节点都汇聚到行程规划节点
-        graph.add_edge("attraction_search", "itinerary_planning")
-        graph.add_edge("weather_query", "itinerary_planning")
-        graph.add_edge("hotel_search", "itinerary_planning")
+        # 等待 3 个信息采集节点全部完成后，再汇聚到行程规划节点
+        graph.add_edge(
+            ["attraction_search", "weather_query", "hotel_search"],
+            "itinerary_planning",
+        )
 
         # 从行程规划节点添加条件路由
         graph.add_conditional_edges(
