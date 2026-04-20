@@ -52,18 +52,61 @@
 
 ```mermaid
 graph TD
-    A[用户输入] --> B[查询增强器]
-    B --> C[话题验证器]
-    C -->|RELEVANT| D[内容检索器]
-    C -->|IRRELEVANT| E[无关话题处理]
-    D --> F[相关性评估器]
-    F -->|有相关文档| G[响应生成器]
-    F -->|无相关文档 且 优化次数<2| H[查询优化器]
-    F -->|无相关文档 且 优化次数≥2| I[无结果处理]
+    A["用户输入"] --> B["查询增强器"]
+    B --> C["话题验证器"]
+    C -->|"RELEVANT"| D["内容检索器"]
+    C -->|"IRRELEVANT"| E["无关话题处理"]
+    D --> F["相关性评估器"]
+    F -->|"有相关文档"| G["响应生成器"]
+    F -->|"无相关文档，未达优化上限"| H["查询优化器"]
+    F -->|"无相关文档，达到优化上限"| I["无结果处理"]
     H --> D
-    G --> J[返回响应]
+    G --> J["返回响应"]
     E --> J
     I --> J
+```
+
+### LangGraph 整体图
+
+当前后端包含两个 LangGraph 编排：`/api/chat` 使用完整非流式图，`/api/chat/stream` 使用流式专用图。两者共享查询增强、话题验证、检索、相关性评估和查询优化节点；区别是流式接口不会在图内执行最终生成，而是把相关文档交给 API 层用 `llm.astream()` 推送 SSE。
+
+```mermaid
+graph TD
+    User["用户消息"] --> API{"FastAPI 路由"}
+
+    API -->|"POST chat"| FullGraph["完整 LangGraph 工作流"]
+    API -->|"POST chat stream"| StreamGraph["流式 LangGraph 工作流"]
+
+    subgraph Shared["共享检索与路由阶段"]
+        Enhance["enhance_query 查询增强"]
+        Validate["validate_topic 话题验证"]
+        Fetch["fetch_content Chroma 内容检索"]
+        Assess["assess_relevance 相关性评估"]
+        Optimize["optimize_query 查询优化"]
+        OffTopic["handle_off_topic 无关话题处理"]
+        NoResults["handle_no_results 无结果处理"]
+
+        Enhance --> Validate
+        Validate -->|"RELEVANT"| Fetch
+        Validate -->|"IRRELEVANT"| OffTopic
+        Fetch --> Assess
+        Assess -->|"无相关文档，未达上限"| Optimize
+        Optimize --> Fetch
+        Assess -->|"无相关文档，达到上限"| NoResults
+    end
+
+    FullGraph --> Enhance
+    StreamGraph --> Enhance
+
+    Assess -->|"有相关文档 chat"| Generate["generate_response 图内非流式生成"]
+    Generate --> FullReturn["返回 JSON 响应"]
+
+    Assess -->|"有相关文档 stream"| SSE["API 层 llm.astream SSE 流式输出"]
+    SSE --> Memory["写回 conversation_history"]
+    SSE --> StreamReturn["返回 text event stream"]
+
+    OffTopic --> StaticReturn["返回静态边界回复"]
+    NoResults --> StaticReturn
 ```
 
 ## 功能特点

@@ -25,6 +25,34 @@
 - **地图服务**: 高德地图 JavaScript API
 - **HTTP客户端**: Axios
 
+## 🔄 LangGraph 工作流
+
+后端旅行规划由 `backend/app/agents/langgraph_planner.py` 构建 StateGraph。收到 `/api/trip/plan` 请求后,系统先初始化旅行状态,并行采集景点、天气和酒店信息,再汇总给行程规划节点生成最终 JSON 行程。
+
+```mermaid
+flowchart TD
+    A([START]) --> B[初始化 TripPlanState]
+    B --> C[景点搜索节点<br/>attraction_search]
+    B --> D[天气查询节点<br/>weather_query]
+    B --> E[酒店搜索节点<br/>hotel_search]
+
+    C --> F[行程规划节点<br/>itinerary_planning]
+    D --> F
+    E --> F
+
+    F --> G{是否生成 itinerary<br/>且 status=completed?}
+    G -->|是| H([END<br/>返回 TripPlanResponse])
+    G -->|否| I[错误处理节点<br/>error_handler]
+    I --> H
+```
+
+主要节点职责:
+- `attraction_search`: 根据城市和偏好调用高德 POI 工具搜索景点。
+- `weather_query`: 查询目的地实时天气和预报信息。
+- `hotel_search`: 根据住宿偏好搜索候选酒店。
+- `itinerary_planning`: 汇总上下文并调用 LLM 生成完整多日行程。
+- `error_handler`: 在规划失败时收敛错误信息并结束工作流。
+
 ## 📁 项目结构
 
 ```
@@ -182,4 +210,3 @@ CC BY-NC-SA 4.0
 ---
 
 **DanAgents智能旅行助手** - 让旅行计划变得简单而智能 🌈
-
