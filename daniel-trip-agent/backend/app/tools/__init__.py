@@ -1,6 +1,6 @@
 """工具模块"""
 
-from .amap_tools import (
+from .amap_mcp_tools import (
     amap_search_attractions,
     amap_query_weather,
     amap_search_hotels,

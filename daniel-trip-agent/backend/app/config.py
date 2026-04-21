@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -32,7 +32,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
 
     # 高德地图API配置
-    amap_api_key: str = os.getenv("AMAP_API_KEY")
+    amap_api_key: Optional[str] = os.getenv("AMAP_API_KEY")
+    amap_maps_api_key: Optional[str] = os.getenv("AMAP_MAPS_API_KEY")
 
     # Unsplash API配置
     unsplash_access_key: str = os.getenv("UNSPLASH_ACCESS_KEY")
@@ -71,8 +72,9 @@ def validate_config():
     errors = []
     warnings = []
 
-    if not settings.amap_api_key:
-        errors.append("AMAP_API_KEY未配置")
+    amap_key = settings.amap_maps_api_key or settings.amap_api_key
+    if not amap_key:
+        errors.append("AMAP_MAPS_API_KEY或AMAP_API_KEY未配置")
 
     # HelloAgentsLLM会自动从LLM_API_KEY读取,不强制要求OPENAI_API_KEY
     llm_api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -97,7 +99,8 @@ def print_config():
     print(f"应用名称: {settings.app_name}")
     print(f"版本: {settings.app_version}")
     print(f"服务器: {settings.host}:{settings.port}")
-    print(f"高德地图API Key: {'已配置' if settings.amap_api_key else '未配置'}")
+    amap_key = settings.amap_maps_api_key or settings.amap_api_key
+    print(f"高德地图API Key: {'已配置' if amap_key else '未配置'}")
 
     # 检查LLM配置
     llm_api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -108,4 +111,3 @@ def print_config():
     print(f"LLM Base URL: {llm_base_url}")
     print(f"LLM Model: {llm_model}")
     print(f"日志级别: {settings.log_level}")
-

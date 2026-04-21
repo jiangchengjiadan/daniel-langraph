@@ -1,9 +1,8 @@
 """天气查询节点 - LangGraph Node实现"""
 
-from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from .. import TripPlanState
-from ...tools.amap_tools import amap_query_weather
+from ...tools.amap_mcp_tools import amap_query_weather
 from ...config import settings
 import json
 import re
@@ -132,37 +131,12 @@ async def weather_query_node(state: TripPlanState) -> TripPlanState:
         if not city:
             raise ValueError("城市信息缺失")
 
-        # 构建prompt
-        prompt = WEATHER_QUERY_PROMPT.format(
-            city=city,
-            start_date=start_date,
-            end_date=end_date
-        )
-
-        # 创建LLM
-        import os
-        api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or settings.openai_api_key
-        base_url = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or settings.openai_base_url
-        model = os.getenv("LLM_MODEL_ID") or os.getenv("OPENAI_MODEL") or settings.openai_model
-
-        llm = ChatOpenAI(
-            model=model,
-            temperature=0,
-            api_key=api_key,
-            base_url=base_url
-        )
-
-        # 创建ReAct Agent
-        tools = [amap_query_weather]
-        agent = create_agent(llm, tools)
-
-        # 执行Agent
-        result = await agent.ainvoke({
-            "messages": [("user", prompt)]
-        })
-
-        # 解析天气结果
-        weather_raw = parse_weather_from_agent_output(result)
+        # 教学版：直接调用高德 MCP 工具，避免采集阶段再引入一个 LLM 工具循环。
+        content = await amap_query_weather.ainvoke({"city": city})
+        try:
+            weather_raw = json.loads(content)
+        except json.JSONDecodeError:
+            weather_raw = {}
 
         # 格式化为标准格式
         weather_data = format_weather_for_state(weather_raw) if weather_raw else {}

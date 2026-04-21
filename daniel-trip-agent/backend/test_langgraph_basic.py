@@ -18,7 +18,7 @@ def test_imports():
         print("  - TripPlanState 导入成功")
 
         print("✓ 导入 tools 模块...")
-        from app.tools.amap_tools import (
+        from app.tools.amap_mcp_tools import (
             amap_search_attractions,
             amap_query_weather,
             amap_search_hotels,

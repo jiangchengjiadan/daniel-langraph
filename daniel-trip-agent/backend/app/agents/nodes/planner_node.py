@@ -41,6 +41,7 @@ PLANNER_PROMPT_TEMPLATE = """你是行程规划专家。你的任务是根据景
 5. 计算详细预算
 6. 提供实用的旅行建议
 7. 考虑天气情况调整行程
+8. 酒店必须匹配用户住宿偏好：如果住宿是“豪华酒店/高档型酒店/五星级酒店”，严禁推荐青年旅舍、青旅、客栈、民宿、公寓、招待所等低价住宿，酒店预算应按每晚800元以上估算
 
 **JSON格式要求**
 请严格按照以下JSON格式返回旅行计划:
@@ -116,6 +117,7 @@ PLANNER_PROMPT_TEMPLATE = """你是行程规划专家。你的任务是根据景
 7. 返回的必须是有效的JSON,不要有任何其他文本
 8. 酒店要从提供的列表中选择,如果列表为空则自行推荐
 9. 景点要从提供的列表中选择,如果列表为空则自行推荐
+10. 酒店名称、类型和价格必须与住宿偏好一致，不能把青年旅舍当作豪华酒店
 
 请开始生成**完整 {travel_days} 天**的行程计划。
 """
@@ -355,14 +357,15 @@ async def itinerary_planning_node(state: TripPlanState) -> TripPlanState:
 
     except Exception as e:
         # 错误处理
-        error_msg = f"行程规划失败: {str(e)}"
+        error_detail = str(e) or type(e).__name__
+        error_msg = f"行程规划失败: {error_detail}"
         print(f"[ERROR] {error_msg}")
 
         # 构建错误日志
         log_entry = {
             "node": "itinerary_planning",
             "status": "failed",
-            "error": str(e)
+            "error": error_detail
         }
 
         # 返回带有错误信息的状态（只返回更新的字段）
