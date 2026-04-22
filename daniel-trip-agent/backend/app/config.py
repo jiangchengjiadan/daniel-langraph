@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     unsplash_access_key: str = os.getenv("UNSPLASH_ACCESS_KEY")
     unsplash_secret_key: str = os.getenv("UNSPLASH_SECRET_KEY")
 
+    # FlyAI/飞猪商品增强配置
+    enable_flyai: bool = os.getenv("ENABLE_FLYAI", "false").lower() == "true"
+    flyai_cli: str = os.getenv("FLYAI_CLI", "flyai")
+    flyai_timeout: int = int(os.getenv("FLYAI_TIMEOUT", "20"))
+
     # LLM配置 (从环境变量读取,由HelloAgents管理)
     openai_api_key: str = os.getenv("LLM_API_KEY")
     openai_base_url: str = os.getenv("LLM_BASE_URL")
@@ -110,4 +115,5 @@ def print_config():
     print(f"LLM API Key: {'已配置' if llm_api_key else '未配置'}")
     print(f"LLM Base URL: {llm_base_url}")
     print(f"LLM Model: {llm_model}")
+    print(f"FlyAI增强: {'已启用' if settings.enable_flyai else '未启用'}")
     print(f"日志级别: {settings.log_level}")

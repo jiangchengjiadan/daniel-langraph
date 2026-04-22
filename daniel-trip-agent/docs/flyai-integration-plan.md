@@ -4,7 +4,7 @@
 
 当前旅行规划主链路已经接入高德 MCP，适合处理 POI、天气、地理位置和路线等地图基础数据。但酒店价格、酒店图片、景点门票价格、预订链接等“交易型旅行商品数据”仍不稳定：酒店搜索容易混入低价住宿，景点门票多为估算，图片依赖 Unsplash，存在不准确的问题。
 
-FlyAI skill 通过 `flyai-cli` 调用飞猪 MCP，可补充酒店商品、景点门票、图片和预订链接。目标是把 FlyAI 作为可选增强数据源，而不是替代高德 MCP。
+FlyAI skill 通过 `@fly-ai/flyai-cli` 调用飞猪 MCP，可补充酒店商品、景点门票、图片和预订链接。目标是把 FlyAI 作为可选增强数据源，而不是替代高德 MCP。
 
 ## 能力边界
 
@@ -62,7 +62,7 @@ backend/app/tools/flyai_tools.py
 职责：
 
 - 检查本机是否安装 `flyai` CLI。
-- 调用 `flyai search-hotel`、`flyai search-poi`。
+- 调用 `search-hotels`、`search-poi` 等 FlyAI CLI 命令。
 - 解析单行 JSON 输出。
 - 归一化为项目内部结构。
 - 设置超时，失败时返回空列表，不抛出致命异常。
@@ -194,12 +194,21 @@ FLYAI_TIMEOUT=20
 FLYAI_CLI=flyai
 ```
 
-FlyAI CLI 安装不建议自动执行，文档中提示用户手动安装：
+FlyAI CLI 不建议在运行时动态安装。生产或课堂演示可以二选一：
+
+1. 全局安装 CLI：
 
 ```bash
 npm i -g @fly-ai/flyai-cli
 flyai --help
-flyai keyword-search --query "北京豪华酒店"
+flyai search-hotels --dest-name "北京" --key-words "豪华酒店"
+```
+
+2. 项目内固定依赖版本，并用 Node bundle 执行：
+
+```bash
+npm install @fly-ai/flyai-cli
+node node_modules/@fly-ai/flyai-cli/dist/flyai-bundle.cjs search-hotels --dest-name "北京"
 ```
 
 如果需要增强结果，可选配置：
@@ -270,4 +279,3 @@ FlyAI 是增强源，必须可降级：
 
 - 增加机票、火车等入口。
 - 支持用户从结果页点击商品链接查看预订。
-

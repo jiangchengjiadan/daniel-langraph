@@ -2,8 +2,16 @@
 
 from langgraph.graph import StateGraph, START, END
 from . import TripPlanState
-from .nodes import (attraction_search_node,hotel_search_node,itinerary_planning_node,
-                   error_handler_node,weather_query_node)
+from .nodes import (
+    attraction_search_node,
+    error_handler_node,
+    hotel_product_search_node,
+    hotel_search_node,
+    itinerary_planning_node,
+    product_enrichment_node,
+    ticket_product_search_node,
+    weather_query_node,
+)
 from ..models.schemas import TripRequest, TripPlan
 from typing import Literal
 import logging
@@ -26,9 +34,10 @@ class LangGraphTripPlanner:
         构建计算图
 
         图结构：
-        1. 并行执行：景点搜索、天气查询、酒店搜索
-        2. 汇聚到：行程规划节点
-        3. 条件路由：成功 -> END，失败 -> 错误处理 -> END
+        1. 并行执行：景点搜索、天气查询、酒店搜索、酒店商品搜索
+        2. 景点搜索完成后查询门票商品
+        3. 汇聚到：行程规划节点
+        4. 成功或 fallback 后都进入商品回填节点
         """
         # 创建StateGraph
         graph = StateGraph(TripPlanState)
@@ -37,17 +46,24 @@ class LangGraphTripPlanner:
         graph.add_node("attraction_search", attraction_search_node)
         graph.add_node("weather_query", weather_query_node)
         graph.add_node("hotel_search", hotel_search_node)
+        graph.add_node("hotel_product_search", hotel_product_search_node)
+        graph.add_node("ticket_product_search", ticket_product_search_node)
         graph.add_node("itinerary_planning", itinerary_planning_node)
+        graph.add_node("product_enrichment", product_enrichment_node)
         graph.add_node("error_handler", error_handler_node)
 
-        # 从 START 扇出，3 个信息采集节点并行执行
+        # 从 START 扇出，信息采集节点并行执行
         graph.add_edge(START, "attraction_search")
         graph.add_edge(START, "weather_query")
         graph.add_edge(START, "hotel_search")
+        graph.add_edge(START, "hotel_product_search")
 
-        # 等待 3 个信息采集节点全部完成后，再汇聚到行程规划节点
+        # 门票商品搜索依赖景点名称
+        graph.add_edge("attraction_search", "ticket_product_search")
+
+        # 等待信息采集与商品增强节点完成后，再汇聚到行程规划节点
         graph.add_edge(
-            ["attraction_search", "weather_query", "hotel_search"],
+            ["weather_query", "hotel_search", "hotel_product_search", "ticket_product_search"],
             "itinerary_planning",
         )
 
@@ -56,13 +72,14 @@ class LangGraphTripPlanner:
             "itinerary_planning",
             self._route_after_planning,
             {
-                "success": END,
+                "success": "product_enrichment",
                 "error": "error_handler"
             }
         )
 
-        # 错误处理节点直接结束
-        graph.add_edge("error_handler", END)
+        # 错误处理节点生成 fallback 后也尝试商品回填
+        graph.add_edge("error_handler", "product_enrichment")
+        graph.add_edge("product_enrichment", END)
 
         return graph
 
@@ -114,6 +131,8 @@ class LangGraphTripPlanner:
                 "attractions": [],
                 "weather_data": {},
                 "hotels": [],
+                "hotel_products": [],
+                "ticket_products": [],
                 "itinerary": None,
                 "budget": None,
                 "errors": [],
