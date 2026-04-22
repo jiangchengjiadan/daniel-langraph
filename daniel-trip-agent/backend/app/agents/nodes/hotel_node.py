@@ -1,12 +1,9 @@
 """酒店搜索节点 - LangGraph Node实现"""
 
-from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
 from .. import TripPlanState
-from ...tools.amap_tools import amap_search_hotels
-from ...config import settings
+from ...tools.amap_mcp_tools import amap_search_hotels
+import asyncio
 import json
-import re
 from typing import Dict, List, Any
 
 
@@ -41,8 +38,11 @@ def get_hotel_keywords(accommodation: str) -> List[str]:
     accommodation_to_keywords = {
         "经济型酒店": ["快捷酒店", "酒店"],
         "舒适型酒店": ["商务酒店", "酒店"],
-        "高档型酒店": ["星级酒店", "酒店"],
+        "高档型酒店": ["五星级酒店", "豪华酒店", "星级酒店"],
+        "豪华酒店": ["五星级酒店", "豪华酒店", "高端酒店"],
+        "五星级酒店": ["五星级酒店", "豪华酒店"],
         "民宿客栈": ["民宿", "客栈", "酒店"],
+        "民宿": ["民宿", "客栈"],
     }
 
     # 尝试精确匹配
@@ -58,51 +58,39 @@ def get_hotel_keywords(accommodation: str) -> List[str]:
     return ["酒店", "宾馆"]
 
 
-def parse_hotels_from_agent_output(agent_result: Dict) -> List[Dict[str, Any]]:
-    """从Agent输出中解析酒店列表"""
-    hotels = []
+def hotel_matches_accommodation(hotel: Dict[str, Any], accommodation: str) -> bool:
+    """过滤明显不符合住宿偏好的酒店。"""
+    name = hotel.get("名称", "")
+    hotel_type = hotel.get("类型", "")
+    text = f"{name} {hotel_type}"
 
-    try:
-        # 从agent的messages中提取工具调用结果
-        if "messages" in agent_result:
-            for message in agent_result["messages"]:
-                # 检查是否是工具消息
-                if hasattr(message, "type") and message.type == "tool":
-                    try:
-                        # 解析工具返回的JSON
-                        content = message.content
-                        if isinstance(content, str):
-                            data = json.loads(content)
-                            if "酒店列表" in data:
-                                hotels.extend(data["酒店列表"])
-                    except json.JSONDecodeError:
-                        continue
-                # 也尝试从普通消息中提取JSON
-                elif hasattr(message, "content"):
-                    content = str(message.content)
-                    # 尝试提取JSON块
-                    json_match = re.search(r'\{[\s\S]*"酒店列表"[\s\S]*\}', content)
-                    if json_match:
-                        try:
-                            data = json.loads(json_match.group(0))
-                            if "酒店列表" in data:
-                                hotels.extend(data["酒店列表"])
-                        except json.JSONDecodeError:
-                            continue
+    budget_words = ["青年", "青旅", "旅舍", "客栈", "民宿", "公寓", "招待所"]
+    luxury_words = ["五星", "豪华", "高端", "国际", "大酒店", "酒店", "度假", "万豪", "希尔顿", "洲际", "凯悦", "香格里拉", "丽思", "威斯汀"]
 
-    except Exception as e:
-        print(f"解析酒店结果时出错: {str(e)}")
+    if accommodation in {"豪华酒店", "高档型酒店", "五星级酒店"}:
+        if any(word in text for word in budget_words):
+            return False
+        return any(word in text for word in luxury_words)
 
-    # 去重（基于名称）
+    if accommodation in {"民宿", "民宿客栈"}:
+        return any(word in text for word in ["民宿", "客栈", "公寓", "旅舍"])
+
+    return True
+
+
+def dedupe_and_filter_hotels(hotels: List[Dict[str, Any]], accommodation: str) -> List[Dict[str, Any]]:
+    """按名称去重，并按住宿偏好过滤。"""
     seen_names = set()
-    unique_hotels = []
+    filtered = []
     for hotel in hotels:
         name = hotel.get("名称", "")
-        if name and name not in seen_names:
-            seen_names.add(name)
-            unique_hotels.append(hotel)
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        if hotel_matches_accommodation(hotel, accommodation):
+            filtered.append(hotel)
 
-    return unique_hotels
+    return filtered
 
 
 def format_hotel_for_state(hotel: Dict) -> Dict[str, Any]:
@@ -143,37 +131,24 @@ async def hotel_search_node(state: TripPlanState) -> TripPlanState:
         if not city:
             raise ValueError("城市信息缺失")
 
-        # 构建prompt
-        prompt = HOTEL_SEARCH_PROMPT.format(
-            city=city,
-            accommodation=accommodation,
-            travel_days=travel_days
+        # 教学版：直接调用高德 MCP 工具，避免采集阶段再引入一个 LLM 工具循环。
+        keywords = list(dict.fromkeys(get_hotel_keywords(accommodation)))[:3]
+        results = await asyncio.gather(
+            *[
+                amap_search_hotels.ainvoke({"keywords": keyword, "city": city})
+                for keyword in keywords
+            ]
         )
 
-        # 创建LLM
-        import os
-        api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or settings.openai_api_key
-        base_url = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or settings.openai_base_url
-        model = os.getenv("LLM_MODEL_ID") or os.getenv("OPENAI_MODEL") or settings.openai_model
+        hotels_raw = []
+        for content in results:
+            try:
+                data = json.loads(content)
+                hotels_raw.extend(data.get("酒店列表", []))
+            except json.JSONDecodeError:
+                continue
 
-        llm = ChatOpenAI(
-            model=model,
-            temperature=0,
-            api_key=api_key,
-            base_url=base_url
-        )
-
-        # 创建ReAct Agent
-        tools = [amap_search_hotels]
-        agent = create_agent(llm, tools)
-
-        # 执行Agent
-        result = await agent.ainvoke({
-            "messages": [("user", prompt)]
-        })
-
-        # 解析酒店结果
-        hotels_raw = parse_hotels_from_agent_output(result)
+        hotels_raw = dedupe_and_filter_hotels(hotels_raw, accommodation)
 
         # 格式化为标准格式
         hotels = [format_hotel_for_state(hotel) for hotel in hotels_raw]

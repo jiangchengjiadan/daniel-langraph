@@ -72,8 +72,8 @@ class LangGraphTripPlanner:
 
         如果有行程计划，则成功；否则进入错误处理
         """
-        # 如果有行程计划并且状态是完成的，则成功
-        if state.get("itinerary") and state.get("status") == "completed":
+        # 如果有行程计划并且状态是完成的，则成功。错误处理节点会返回 completed_with_fallback。
+        if state.get("itinerary") and state.get("status") in {"completed", "completed_with_fallback"}:
             return "success"
 
         # 否则进入错误处理
@@ -124,6 +124,12 @@ class LangGraphTripPlanner:
             # 执行图
             logger.info("📊 开始执行 LangGraph 工作流...")
             final_state = await self.app.ainvoke(initial_state)
+            logger.info(
+                "📦 LangGraph 工作流结束: status=%s, has_itinerary=%s, errors=%s",
+                final_state.get("status"),
+                bool(final_state.get("itinerary")),
+                len(final_state.get("errors", [])),
+            )
 
             # 记录执行日志
             if final_state.get("execution_log"):

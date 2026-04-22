@@ -4,8 +4,8 @@
 
 ### 1. 系统要求
 - ✅ Python 3.10+
-- ✅ Node.js 16+
-- ✅ 高德地图 API 密钥（Web服务API + Web端JavaScript API）
+- ✅ Node.js 20+ 推荐（后端通过 `npx` 启动高德 MCP Server）
+- ✅ 高德地图 API 密钥（MCP服务端API + Web端JavaScript API）
 - ✅ LLM API 密钥（OpenAI/DeepSeek等）
 
 ---
@@ -41,6 +41,8 @@ pip install -r requirements.txt
 - `langchain-openai>=0.2.0` - OpenAI 集成
 - `langchain-core>=0.3.0` - LangChain 核心组件
 - `langchain-community>=0.3.0` - 社区工具
+- `langchain-mcp-adapters>=0.2.1` - 将 MCP Server 工具转换为 LangChain tools
+- `mcp>=1.12.0` - MCP Python 协议支持
 
 ### 步骤 3: 配置环境变量
 
@@ -53,7 +55,10 @@ OPENAI_API_BASE=https://api.openai.com/v1  # API基础URL
 LLM_MODEL=gpt-4                          # 使用的模型
 
 # 高德地图配置
-AMAP_MAPS_API_KEY=your_amap_key          # 高德地图服务端API密钥
+AMAP_MAPS_API_KEY=your_amap_key          # 高德 MCP Server 使用的服务端API密钥
+AMAP_MCP_COMMAND=npx
+AMAP_MCP_PACKAGE=@amap/amap-maps-mcp-server
+AMAP_MCP_TIMEOUT=30
 
 # LangGraph 开关（默认启用）
 USE_LANGGRAPH=true                       # true=使用LangGraph, false=回滚到HelloAgents
@@ -62,6 +67,7 @@ USE_LANGGRAPH=true                       # true=使用LangGraph, false=回滚到
 **重要说明：**
 - `USE_LANGGRAPH=true`：使用新的 LangGraph 实现（默认，推荐）
 - `USE_LANGGRAPH=false`：回滚到原来的 HelloAgents 实现
+- 后端旅行规划节点会通过 `langchain-mcp-adapters` 启动官方高德 MCP Server，并调用 `maps_text_search`、`maps_weather` 等工具。
 
 ### 步骤 4: 验证基本功能（可选）
 
@@ -178,8 +184,9 @@ npm run dev
 ### 后端检查
 - [ ] 虚拟环境已激活
 - [ ] 所有依赖已安装（包括 langgraph、langchain）
-- [ ] `.env` 文件已配置（OpenAI API Key、高德地图 API Key）
+- [ ] `.env` 文件已配置（LLM API Key、高德地图 MCP API Key）
 - [ ] `USE_LANGGRAPH=true` 已设置
+- [ ] 本机可以运行 `npx -y @amap/amap-maps-mcp-server`
 - [ ] 后端服务已启动在 `http://localhost:8000`
 - [ ] 健康检查接口返回 `"implementation": "LangGraph"`
 

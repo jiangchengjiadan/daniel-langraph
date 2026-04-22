@@ -1,10 +1,10 @@
 """景点搜索节点 - LangGraph Node实现"""
 
-from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from .. import TripPlanState
-from ...tools.amap_tools import amap_search_attractions
+from ...tools.amap_mcp_tools import amap_search_attractions
 from ...config import settings
+import asyncio
 import json
 import re
 from typing import Dict, List, Any
@@ -148,41 +148,22 @@ async def attraction_search_node(state: TripPlanState) -> TripPlanState:
         if not city:
             raise ValueError("城市信息缺失")
 
-        # 计算需要搜索的景点数量
-        min_attractions = travel_days * 3  # 每天至少3个景点
-
-        # 构建prompt
-        prompt = ATTRACTION_SEARCH_PROMPT.format(
-            city=city,
-            preferences="、".join(preferences) if preferences else "综合旅游",
-            travel_days=travel_days,
-            min_attractions=min_attractions
+        # 教学版：直接调用高德 MCP 工具，避免采集阶段再引入一个 LLM 工具循环。
+        keywords = list(dict.fromkeys(extract_keywords_from_preferences(preferences)))[:6]
+        results = await asyncio.gather(
+            *[
+                amap_search_attractions.ainvoke({"keywords": keyword, "city": city})
+                for keyword in keywords
+            ]
         )
 
-        # 创建LLM
-        import os
-        api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or settings.openai_api_key
-        base_url = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or settings.openai_base_url
-        model = os.getenv("LLM_MODEL_ID") or os.getenv("OPENAI_MODEL") or settings.openai_model
-
-        llm = ChatOpenAI(
-            model=model,
-            temperature=0,
-            api_key=api_key,
-            base_url=base_url
-        )
-
-        # 创建ReAct Agent
-        tools = [amap_search_attractions]
-        agent = create_agent(llm, tools)
-
-        # 执行Agent
-        result = await agent.ainvoke({
-            "messages": [("user", prompt)]
-        })
-
-        # 解析景点结果
-        attractions_raw = parse_attractions_from_agent_output(result)
+        attractions_raw = []
+        for content in results:
+            try:
+                data = json.loads(content)
+                attractions_raw.extend(data.get("景点列表", []))
+            except json.JSONDecodeError:
+                continue
 
         # 格式化为标准格式
         attractions = [format_attraction_for_state(attr) for attr in attractions_raw]

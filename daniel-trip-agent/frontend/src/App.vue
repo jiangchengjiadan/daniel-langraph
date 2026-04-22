@@ -10,7 +10,7 @@
         <router-view />
       </a-layout-content>
       <a-layout-footer style="text-align: center">
-        DanielAgentss智能旅行助手 ©2025 基于langgraph框架
+        DanielAgents智能旅行助手 ©2025 基于langgraph框架
       </a-layout-footer>
     </a-layout>
   </div>

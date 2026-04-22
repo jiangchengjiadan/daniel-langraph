@@ -15,7 +15,7 @@
 ### 后端
 - **框架**: langgraph
 - **API**: FastAPI
-- **MCP工具**: amap-mcp-server (高德地图)
+- **MCP工具**: `@amap/amap-maps-mcp-server` + `langchain-mcp-adapters`
 - **LLM**: 支持多种LLM提供商(OpenAI, DeepSeek等)
 
 ### 前端
@@ -47,9 +47,9 @@ flowchart TD
 ```
 
 主要节点职责:
-- `attraction_search`: 根据城市和偏好调用高德 POI 工具搜索景点。
-- `weather_query`: 查询目的地实时天气和预报信息。
-- `hotel_search`: 根据住宿偏好搜索候选酒店。
+- `attraction_search`: 通过高德 MCP `maps_text_search` 搜索景点。
+- `weather_query`: 通过高德 MCP `maps_weather` 查询天气预报。
+- `hotel_search`: 通过高德 MCP `maps_text_search` 搜索候选酒店。
 - `itinerary_planning`: 汇总上下文并调用 LLM 生成完整多日行程。
 - `error_handler`: 在规划失败时收敛错误信息并结束工作流。
 
@@ -69,6 +69,8 @@ helloagents-trip-planner/
 │   │   ├── services/          # 服务层
 │   │   │   ├── amap_service.py
 │   │   │   └── llm_service.py
+│   │   ├── tools/             # LangChain / MCP 工具适配
+│   │   │   └── amap_mcp_tools.py
 │   │   ├── models/            # 数据模型
 │   │   │   └── schemas.py
 │   │   └── config.py          # 配置管理
@@ -91,7 +93,7 @@ helloagents-trip-planner/
 ### 前提条件
 
 - Python 3.10+
-- Node.js 16+
+- Node.js 20+ 推荐（用于通过 `npx` 启动高德 MCP Server）
 - 高德地图API密钥 (Web服务API)
 - LLM API密钥 (OpenAI/DeepSeek等)
 
@@ -116,7 +118,8 @@ pip install -r requirements.txt
 4. 配置环境变量
 ```bash
 cp .env .env
-# 编辑.env文件,填入你的API密钥
+# 编辑.env文件,填入 LLM_API_KEY、LLM_BASE_URL、LLM_MODEL_ID
+# 以及 AMAP_MAPS_API_KEY 或 AMAP_API_KEY
 ```
 
 5. 启动后端服务
@@ -175,12 +178,15 @@ npm run dev
 
 ### MCP工具调用
 
-Agent可以自动调用以下高德地图MCP工具:
+Agent节点通过 `backend/app/tools/amap_mcp_tools.py` 使用 `langchain-mcp-adapters` 启动官方高德 MCP Server,并将 MCP tools 包装成 LangChain tools。当前旅行规划主链路使用:
 - `maps_text_search`: 搜索景点POI
 - `maps_weather`: 查询天气
-- `maps_direction_walking_by_address`: 步行路线规划
-- `maps_direction_driving_by_address`: 驾车路线规划
-- `maps_direction_transit_integrated_by_address`: 公共交通路线规划
+
+高德 MCP Server 同时还暴露路线和地理编码工具,例如:
+- `maps_direction_walking`: 步行路线规划
+- `maps_direction_driving`: 驾车路线规划
+- `maps_direction_transit_integrated`: 公共交通路线规划
+- `maps_geo` / `maps_regeocode`: 地理编码与逆地理编码
 
 ## 📄 API文档
 
@@ -205,7 +211,7 @@ CC BY-NC-SA 4.0
 - [HelloAgents](https://github.com/datawhalechina/Hello-Agents) - 智能体教程
 - [HelloAgents框架](https://github.com/jjyaoao/HelloAgents) - 智能体框架
 - [高德地图开放平台](https://lbs.amap.com/) - 地图服务
-- [amap-mcp-server](https://github.com/sugarforever/amap-mcp-server) - 高德地图MCP服务器
+- [高德地图 MCP Server](https://www.npmjs.com/package/@amap/amap-maps-mcp-server) - 官方高德 MCP 工具服务
 
 ---
 
