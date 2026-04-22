@@ -1,5 +1,15 @@
 """FastAPI主应用"""
 
+import os
+import warnings
+
+# LangChain may import transformers for token counting; this project does not
+# need local Torch models, and disabling Torch avoids noisy NumPy/Torch warnings.
+os.environ.setdefault("USE_TORCH", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TORCH", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+warnings.filterwarnings("ignore", message="None of PyTorch, TensorFlow.*")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ..config import get_settings, validate_config, print_config
@@ -96,4 +106,3 @@ if __name__ == "__main__":
         port=settings.port,
         reload=True
     )
-

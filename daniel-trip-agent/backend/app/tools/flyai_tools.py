@@ -65,6 +65,13 @@ def _parse_price(value: Any) -> int | None:
     return int(float(match.group(0)))
 
 
+def _clean_poi_keyword(name: str) -> str:
+    """减少 FlyAI search-poi 返回过宽结果导致的大响应。"""
+    name = re.sub(r"[（(].*?[）)]", "", name or "")
+    name = re.sub(r"\s+", " ", name).strip()
+    return name[:30]
+
+
 async def _run_flyai(command: str, params: dict[str, Any]) -> list[dict[str, Any]]:
     """执行 FlyAI CLI 并返回 itemList。"""
     if not settings.enable_flyai:
@@ -81,6 +88,36 @@ async def _run_flyai(command: str, params: dict[str, Any]) -> list[dict[str, Any
             continue
         args.extend([f"--{key}", str(value)])
 
+    max_attempts = 2
+    last_error: str | None = None
+    safe_params = {key: value for key, value in params.items() if value not in (None, "")}
+
+    print(f"🔎 FlyAI调用开始: {command}, params={safe_params}", flush=True)
+
+    for attempt in range(1, max_attempts + 1):
+        print(f"🔁 FlyAI调用尝试: {command} 第{attempt}/{max_attempts}次", flush=True)
+        result, retryable_error = await _run_flyai_once(prefix, args, command, attempt, max_attempts)
+        if result is not None:
+            print(f"✅ FlyAI调用成功: {command}, items={len(result)}", flush=True)
+            return result
+
+        last_error = retryable_error
+        if attempt < max_attempts:
+            print(f"↩️ FlyAI准备重试: {command}, reason={retryable_error}", flush=True)
+            await asyncio.sleep(0.5 * attempt)
+
+    print(f"ℹ️ FlyAI增强跳过: {command} 连续{max_attempts}次未返回可用数据 ({last_error})", flush=True)
+    return []
+
+
+async def _run_flyai_once(
+    prefix: list[str],
+    args: list[str],
+    command: str,
+    attempt: int,
+    max_attempts: int,
+) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """执行一次 FlyAI CLI。返回 None 表示可重试失败。"""
     try:
         proc = await asyncio.create_subprocess_exec(
             *prefix,
@@ -91,25 +128,26 @@ async def _run_flyai(command: str, params: dict[str, Any]) -> list[dict[str, Any
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=settings.flyai_timeout)
 
         if stderr:
-            print(f"⚠️ FlyAI stderr: {stderr.decode(errors='ignore')[:500]}", flush=True)
+            print(f"⚠️ FlyAI stderr: {stderr.decode(errors='replace')[:500]}", flush=True)
 
         if proc.returncode != 0:
-            print(f"⚠️ FlyAI命令失败: {command}, returncode={proc.returncode}", flush=True)
-            return []
+            return None, f"returncode={proc.returncode}"
 
-        payload = json.loads(stdout.decode().strip() or "{}")
+        payload_text = stdout.decode("utf-8", errors="replace").strip()
+        try:
+            payload = json.loads(payload_text or "{}")
+        except json.JSONDecodeError as exc:
+            print(f"ℹ️ FlyAI返回非完整JSON: {command} 第{attempt}/{max_attempts}次 ({exc})", flush=True)
+            return None, f"invalid json: {exc}"
         if payload.get("status") not in (0, "0", None):
-            print(f"⚠️ FlyAI返回异常: {payload.get('message')}", flush=True)
-            return []
+            return None, f"status={payload.get('status')}, message={payload.get('message')}"
 
         items = payload.get("data", {}).get("itemList", [])
-        return items if isinstance(items, list) else []
+        return (items if isinstance(items, list) else []), None
     except asyncio.TimeoutError:
-        print(f"⚠️ FlyAI命令超时: {command}", flush=True)
-        return []
+        return None, "timeout"
     except Exception as exc:
-        print(f"⚠️ FlyAI调用失败: {command}: {exc}", flush=True)
-        return []
+        return None, str(exc)
 
 
 def _hotel_star_for_accommodation(accommodation: str) -> str | None:
@@ -173,7 +211,7 @@ async def search_ticket_products(city: str, attraction_names: list[str]) -> list
             "search-poi",
             {
                 "city-name": city,
-                "keyword": name,
+                "keyword": _clean_poi_keyword(name),
             },
         )
         for item in items[:3]:
