@@ -217,6 +217,16 @@
                         <p><strong>游览时长:</strong> {{ item.visit_duration }}分钟</p>
                         <p><strong>描述:</strong> {{ item.description }}</p>
                         <p v-if="item.rating"><strong>评分:</strong> {{ item.rating }}⭐</p>
+                        <a-button
+                          v-if="item.booking_url"
+                          type="link"
+                          :href="item.booking_url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style="padding-left: 0"
+                        >
+                          查看门票
+                        </a-button>
                       </div>
                     </a-card>
                   </a-list-item>
@@ -229,12 +239,19 @@
                 <template #title>
                   <span class="hotel-title">{{ day.hotel.name }}</span>
                 </template>
+                <div v-if="day.hotel.image_url" class="hotel-image-wrapper">
+                  <img :src="day.hotel.image_url" :alt="day.hotel.name" class="hotel-image" referrerpolicy="no-referrer" />
+                </div>
                 <a-descriptions :column="2" size="small">
                   <a-descriptions-item label="地址">{{ day.hotel.address }}</a-descriptions-item>
                   <a-descriptions-item label="类型">{{ day.hotel.type }}</a-descriptions-item>
                   <a-descriptions-item label="价格范围">{{ day.hotel.price_range }}</a-descriptions-item>
                   <a-descriptions-item label="评分">{{ day.hotel.rating }}⭐</a-descriptions-item>
                   <a-descriptions-item label="距离" :span="2">{{ day.hotel.distance }}</a-descriptions-item>
+                  <a-descriptions-item v-if="day.hotel.source" label="来源">{{ day.hotel.source }}</a-descriptions-item>
+                  <a-descriptions-item v-if="day.hotel.booking_url" label="预订" :span="2">
+                    <a :href="day.hotel.booking_url" target="_blank" rel="noopener noreferrer">查看详情或预订</a>
+                  </a-descriptions-item>
                 </a-descriptions>
               </a-card>
 
@@ -438,10 +455,16 @@ const loadAttractionPhotos = async () => {
   if (!tripPlan.value) return
 
   const promises: Promise<void>[] = []
+  const city = tripPlan.value.city
 
   tripPlan.value.days.forEach(day => {
     day.attractions.forEach(attraction => {
-      const promise = fetch(`http://localhost:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}&city=${encodeURIComponent(tripPlan.value.city)}`)
+      if (attraction.image_url) {
+        attractionPhotos.value[attraction.name] = attraction.image_url
+        return
+      }
+
+      const promise = fetch(`http://localhost:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}&city=${encodeURIComponent(city)}`)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.data.photo_url) {
@@ -1170,6 +1193,22 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   font-weight: 600;
 }
 
+.hotel-image-wrapper {
+  width: 100%;
+  height: 180px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f0f5ff;
+}
+
+.hotel-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* 顶部信息区布局 */
 .top-info-section {
   display: flex;
@@ -1445,4 +1484,3 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   }
 }
 </style>
-

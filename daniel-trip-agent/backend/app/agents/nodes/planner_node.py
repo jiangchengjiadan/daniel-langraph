@@ -182,6 +182,12 @@ def format_hotels_for_prompt(hotels: list) -> str:
 
 def extract_json_from_llm_response(content: str) -> Optional[Dict[str, Any]]:
     """从LLM响应中提取JSON"""
+    content = (content or "").strip()
+
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content, flags=re.IGNORECASE)
+        content = re.sub(r"\s*```$", "", content).strip()
+
     try:
         # 尝试直接解析
         return json.loads(content)
@@ -189,26 +195,36 @@ def extract_json_from_llm_response(content: str) -> Optional[Dict[str, Any]]:
         pass
 
     # 尝试提取```json```代码块
-    json_match = re.search(r'```json\s*\n([\s\S]*?)\n```', content)
+    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content, re.IGNORECASE)
     if json_match:
         try:
-            return json.loads(json_match.group(1))
+            return json.loads(json_match.group(1).strip())
         except json.JSONDecodeError:
             pass
 
     # 尝试提取```代码块
-    json_match = re.search(r'```\s*\n([\s\S]*?)\n```', content)
+    json_match = re.search(r'```\s*([\s\S]*?)\s*```', content)
     if json_match:
         try:
-            return json.loads(json_match.group(1))
+            return json.loads(json_match.group(1).strip())
         except json.JSONDecodeError:
             pass
 
-    # 尝试提取大括号内容
-    json_match = re.search(r'\{[\s\S]*\}', content)
-    if json_match:
+    # 尝试从第一个 JSON 对象开始解析，允许后面带少量说明文本
+    start = content.find("{")
+    if start >= 0:
+        decoder = json.JSONDecoder()
         try:
-            return json.loads(json_match.group(0))
+            parsed, _ = decoder.raw_decode(content[start:])
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+
+    # 尝试提取最外层大括号内容
+    end = content.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(content[start:end + 1])
         except json.JSONDecodeError:
             pass
 
@@ -328,6 +344,14 @@ async def itinerary_planning_node(state: TripPlanState) -> TripPlanState:
         itinerary_dict = extract_json_from_llm_response(response.content)
 
         if not itinerary_dict:
+            content = (response.content or "").strip()
+            print(
+                "⚠️ LLM响应JSON解析失败: "
+                f"length={len(content)}, "
+                f"head={content[:500].replace(chr(10), ' ')}, "
+                f"tail={content[-500:].replace(chr(10), ' ')}",
+                flush=True,
+            )
             raise ValueError("无法从LLM响应中提取有效的JSON")
 
         # 标准化数据

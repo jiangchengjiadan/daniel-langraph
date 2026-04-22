@@ -69,6 +69,8 @@ class Attraction(BaseModel):
     photos: Optional[List[str]] = Field(default_factory=list, description="景点图片URL列表")
     poi_id: Optional[str] = Field(default="", description="POI ID")
     image_url: Optional[str] = Field(default=None, description="图片URL")
+    booking_url: Optional[str] = Field(default=None, description="门票或详情预订链接")
+    source: Optional[str] = Field(default=None, description="商品数据来源")
     ticket_price: int = Field(default=0, description="门票价格(元)")
 
 
@@ -92,6 +94,9 @@ class Hotel(BaseModel):
     distance: str = Field(default="", description="距离景点距离")
     type: str = Field(default="", description="酒店类型")
     estimated_cost: int = Field(default=0, description="预估费用(元/晚)")
+    image_url: Optional[str] = Field(default=None, description="酒店图片URL")
+    booking_url: Optional[str] = Field(default=None, description="酒店详情或预订链接")
+    source: Optional[str] = Field(default=None, description="商品数据来源")
 
 
 class DayPlan(BaseModel):
@@ -203,4 +208,3 @@ class ErrorResponse(BaseModel):
     success: bool = Field(default=False, description="是否成功")
     message: str = Field(..., description="错误消息")
     error_code: Optional[str] = Field(default=None, description="错误代码")
-

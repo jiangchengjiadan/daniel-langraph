@@ -26,6 +26,8 @@ class TripPlanState(TypedDict, total=False):
     attractions: List[Dict]          # 景点列表
     weather_data: Dict               # 天气信息
     hotels: List[Dict]               # 酒店列表
+    hotel_products: List[Dict]       # FlyAI 酒店商品列表
+    ticket_products: List[Dict]      # FlyAI 景点门票商品列表
 
     # === 最终输出 ===
     itinerary: Optional[Dict]        # 完整行程计划 (TripPlan的字典形式)

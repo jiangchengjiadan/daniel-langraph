@@ -55,6 +55,8 @@ The current Git history uses short, descriptive Chinese commit messages, for exa
 
 Pull requests should include a brief summary, affected backend/frontend areas, test commands run, and screenshots or screen recordings for visible UI changes. Link related issues when available.
 
+Agents must not commit, push, merge, or create/update pull requests unless the user explicitly asks for that operation in the current conversation. Code and documentation edits may be made as requested, but VCS publishing actions require explicit approval each time.
+
 ## Security & Configuration Tips
 
 Do not commit real `.env` secrets. Backend configuration expects keys such as `AMAP_API_KEY`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_ID`, and optional Unsplash keys. Frontend local configuration uses `VITE_AMAP_WEB_KEY` in `frontend/.env`.

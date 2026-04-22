@@ -188,6 +188,26 @@ Agent节点通过 `backend/app/tools/amap_mcp_tools.py` 使用 `langchain-mcp-ad
 - `maps_direction_transit_integrated`: 公共交通路线规划
 - `maps_geo` / `maps_regeocode`: 地理编码与逆地理编码
 
+### FlyAI 商品增强（可选）
+
+后端可选通过 FlyAI/飞猪商品数据增强酒店和景点结果，用于回填酒店图片、酒店价格、预订链接、景点门票价格和景点图片。默认关闭，不影响高德 MCP 基础链路。
+
+```bash
+# backend/.env
+ENABLE_FLYAI=true
+FLYAI_CLI=flyai
+FLYAI_TIMEOUT=20
+```
+
+可使用全局 CLI：
+
+```bash
+npm i -g @fly-ai/flyai-cli
+flyai search-hotels --dest-name "北京" --key-words "豪华酒店"
+```
+
+也可在项目内安装 `@fly-ai/flyai-cli`，后端会优先查找本地 `node_modules/@fly-ai/flyai-cli/dist/flyai-bundle.cjs`。FlyAI 失败时会自动降级为高德 MCP 数据和本地预算估算。
+
 ## 📄 API文档
 
 启动后端服务后,访问 `http://localhost:8000/docs` 查看完整的API文档。

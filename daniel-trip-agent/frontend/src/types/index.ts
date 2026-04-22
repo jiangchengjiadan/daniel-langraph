@@ -14,6 +14,8 @@ export interface Attraction {
   category?: string
   rating?: number
   image_url?: string
+  booking_url?: string
+  source?: string
   ticket_price?: number
 }
 
@@ -35,6 +37,9 @@ export interface Hotel {
   distance: string
   type: string
   estimated_cost?: number
+  image_url?: string
+  booking_url?: string
+  source?: string
 }
 
 export interface Budget {
@@ -92,4 +97,3 @@ export interface TripPlanResponse {
   message: string
   data?: TripPlan
 }
-
