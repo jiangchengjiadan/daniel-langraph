@@ -30,16 +30,16 @@ streamlit run app/streamlit_app.py
 
 ```mermaid
 flowchart TD
-    A[用户输入问题] --> B[BM25 关键词召回]
-    A --> C[FAISS 向量语义召回]
-    B --> D[按权重合并并去重]
+    A["用户输入问题"] --> B["BM25 关键词召回"]
+    A --> C["FAISS 向量语义召回"]
+    B --> D["按权重合并并去重"]
     C --> D
-    D --> E[得到相关 Child 页面块]
-    E --> F[根据 parent_id 读取 Parent 父块]
-    F --> G[拼接参考上下文]
-    G --> H[保留图片 Markdown 链接]
-    H --> I[调用 LLM 生成回答]
-    I --> J[返回答案、来源页码和图片]
+    D --> E["得到相关 Child 页面块"]
+    E --> F["根据 parent_id 读取 Parent 父块"]
+    F --> G["拼接参考上下文"]
+    G --> H["保留图片 Markdown 链接"]
+    H --> I["调用 LLM 生成回答"]
+    I --> J["返回答案、来源页码和图片"]
 ```
 
 核心思路是：**检索用子块，回答用父块**。

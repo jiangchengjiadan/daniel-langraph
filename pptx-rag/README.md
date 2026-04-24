@@ -192,25 +192,25 @@ streamlit run app/streamlit_app.py
 
 ```mermaid
 flowchart TD
-    A[用户输入问题] --> B{是否选择指定文档}
-    B -->|是| C[按 file_name 过滤检索范围]
-    B -->|否| D[检索全部已加载文档]
-    C --> E[混合检索]
+    A["用户输入问题"] --> B{"是否选择指定文档"}
+    B -->|"是"| C["按 file_name 过滤检索范围"]
+    B -->|"否"| D["检索全部已加载文档"]
+    C --> E["混合检索"]
     D --> E
-    E --> F[BM25 关键词召回]
-    E --> G[FAISS 向量语义召回]
-    F --> H[按权重合并并去重]
+    E --> F["BM25 关键词召回"]
+    E --> G["FAISS 向量语义召回"]
+    F --> H["按权重合并并去重"]
     G --> H
-    H --> I[得到相关 Child 页面块]
-    I --> J{Child 是否有 parent_id}
-    J -->|有| K[从 DocStore 读取 Parent 父块]
-    J -->|无| L[保留单页 Child 内容]
-    K --> M[拼接参考上下文]
+    H --> I["得到相关 Child 页面块"]
+    I --> J{"Child 是否有 parent_id"}
+    J -->|"有"| K["从 DocStore 读取 Parent 父块"]
+    J -->|"无"| L["保留单页 Child 内容"]
+    K --> M["拼接参考上下文"]
     L --> M
-    M --> N[保留 Markdown 图片占位符]
-    N --> O[构造 QA Prompt]
-    O --> P[调用 LLM 生成回答]
-    P --> Q[返回答案 来源页码 图片]
+    M --> N["保留 Markdown 图片占位符"]
+    N --> O["构造 QA Prompt"]
+    O --> P["调用 LLM 生成回答"]
+    P --> Q["返回答案、来源页码和图片"]
 ```
 
 关键点：
