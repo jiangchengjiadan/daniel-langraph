@@ -30,6 +30,29 @@ class Config:
             load_dotenv(env_path)
         else:
             load_dotenv()
+        self._configure_langsmith()
+
+    @staticmethod
+    def _get_bool(name: str, default: bool = False) -> bool:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _configure_langsmith(self):
+        """Apply LangSmith runtime flags before LangChain/OpenAI clients are created."""
+        enabled = self.langsmith_enabled and bool(self.langsmith_api_key)
+        os.environ["LANGSMITH_TRACING"] = "true" if enabled else "false"
+        os.environ["LANGCHAIN_TRACING_V2"] = "true" if enabled else "false"
+
+        if enabled:
+            os.environ["LANGSMITH_API_KEY"] = self.langsmith_api_key
+            os.environ["LANGSMITH_PROJECT"] = self.langsmith_project
+            os.environ["LANGSMITH_ENDPOINT"] = self.langsmith_endpoint
+        else:
+            os.environ.pop("LANGSMITH_API_KEY", None)
+            os.environ.pop("LANGSMITH_PROJECT", None)
+            os.environ.pop("LANGSMITH_ENDPOINT", None)
 
     # API Configuration (OpenAI Compatible)
     @property
@@ -43,6 +66,27 @@ class Config:
     @property
     def llm_model(self) -> str:
         return os.getenv("LLM_MODEL", "gpt-4")
+
+    # LangSmith
+    @property
+    def langsmith_enabled(self) -> bool:
+        return self._get_bool("LANGSMITH_ENABLED", False)
+
+    @property
+    def langsmith_api_key(self) -> str:
+        return os.getenv("LANGSMITH_API_KEY", "")
+
+    @property
+    def langsmith_project(self) -> str:
+        return os.getenv("LANGSMITH_PROJECT", "pptx-rag")
+
+    @property
+    def langsmith_endpoint(self) -> str:
+        return os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+
+    @property
+    def langsmith_active(self) -> bool:
+        return self.langsmith_enabled and bool(self.langsmith_api_key)
 
     # Embedding Model
     @property

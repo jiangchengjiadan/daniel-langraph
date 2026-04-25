@@ -5,9 +5,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from langchain_openai import ChatOpenAI
-
 from ..config import config
+from langchain_openai import ChatOpenAI
 from ..logging import log
 from ..models import AnswerResult
 from ..services import DocumentKnowledgeService

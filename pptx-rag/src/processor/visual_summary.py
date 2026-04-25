@@ -2,9 +2,9 @@
 """Generate visual summaries for PPT slides using Vision API"""
 
 from pathlib import Path
-from langchain_openai import ChatOpenAI
 
 from ..config import config
+from langchain_openai import ChatOpenAI
 from ..logging import log
 
 

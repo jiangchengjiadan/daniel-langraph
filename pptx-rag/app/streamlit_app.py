@@ -70,6 +70,10 @@ def main():
     with st.sidebar:
         st.header("文档管理")
         mode = st.radio("工作模式", ["问答模式", "研究模式"], key="app_mode")
+        langsmith_status = "已开启" if config.langsmith_active else "未开启"
+        st.caption(f"LangSmith Tracing: `{langsmith_status}`")
+        if config.langsmith_active:
+            st.caption(f"Project: `{config.langsmith_project}`")
 
         # Initialize upload state
         if "uploading_file" not in st.session_state:

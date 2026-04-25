@@ -6,10 +6,10 @@ import json
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import List, Optional
 
-from langchain_openai import ChatOpenAI
 from langchain.tools import tool
 
 from ..config import config
+from langchain_openai import ChatOpenAI
 from ..logging import log
 from ..services import DocumentKnowledgeService
 from .prompts import (

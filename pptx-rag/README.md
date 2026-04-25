@@ -49,6 +49,7 @@
 | 向量库 | FAISS |
 | DocStore | LocalFileStore (JSON 文件) |
 | 前端 | Streamlit |
+| Tracing | LangSmith（可选开关） |
 | 图片存储 | 本地 HTTP 服务器 |
 
 ## 架构
@@ -190,6 +191,12 @@ API_KEY=sk-your-api-key-here
 LLM_MODEL=gpt-4  # 或你的自定义模型名称
 EMBEDDING_MODEL=text-embedding-3-large  # 或你的自定义 embedding 模型
 
+# LangSmith（可选，默认关闭）
+LANGSMITH_ENABLED=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=pptx-rag
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+
 # 数据目录
 DATA_DIR=./data
 
@@ -215,6 +222,19 @@ LLM_NUM_PREDICT=2048
 - 阿里云通义千问 (DashScope)
 - 智谱 AI (GLM)
 - 任何 OpenAI 兼容的 API 端点
+
+### LangSmith 开关说明
+
+项目已内置 LangSmith tracing 开关，默认关闭，不配置也可以正常运行。
+
+- 关闭状态：`LANGSMITH_ENABLED=false`
+- 开启状态：需要同时配置
+  - `LANGSMITH_ENABLED=true`
+  - `LANGSMITH_API_KEY`
+  - 可选 `LANGSMITH_PROJECT`
+  - 可选 `LANGSMITH_ENDPOINT`
+
+开启后，RAG 问答、文档处理、Deep Research 与 Deep Agents 路径都会沿用同一进程内的 LangSmith tracing 配置。Streamlit 侧边栏会显示当前状态。
 
 ## 使用
 

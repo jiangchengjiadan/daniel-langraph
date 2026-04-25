@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from langchain_openai import ChatOpenAI
-
 from ..config import config
+from langchain_openai import ChatOpenAI
 from ..logging import log
 from ..services import DocumentKnowledgeService
 from .prompts import PLAN_PROMPT, QUESTION_PROMPT, REPORT_PROMPT
