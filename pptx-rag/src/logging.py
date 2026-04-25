@@ -25,14 +25,17 @@ def setup_logging():
 
     # Add file handler
     log_file = config.logs_dir / "app.log"
-    logger.add(
-        log_file,
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {module} | {message}",
-        level="DEBUG",
-        rotation="10 MB",
-        retention="7 days",
-        compression="gz",
-    )
+    try:
+        logger.add(
+            log_file,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {module} | {message}",
+            level="DEBUG",
+            rotation="10 MB",
+            retention="7 days",
+            compression="gz",
+        )
+    except Exception as e:
+        logger.warning(f"File logging disabled: {e}")
 
     return logger
 

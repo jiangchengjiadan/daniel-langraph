@@ -98,10 +98,14 @@ class DocStore:
         """
         chunks = []
         for file_path in self.store_dir.glob("*.json"):
-            if file_name in file_path.name:
-                parent = self.get_by_id(file_path.stem)
-                if parent:
-                    chunks.append(parent)
+            try:
+                data = json.loads(file_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                self.log.warning(f"Failed to read parent chunk {file_path.name}: {e}")
+                continue
+
+            if data.get("file_name") == file_name:
+                chunks.append(ParentChunk(**data))
         return chunks
 
     def delete(self, chunk_id: str) -> bool:
@@ -138,7 +142,16 @@ class DocStore:
         """
         count = 0
         for file_path in self.store_dir.glob("*.json"):
-            if file_name is None or file_name in file_path.name:
+            should_delete = file_name is None
+            if file_name is not None:
+                try:
+                    data = json.loads(file_path.read_text(encoding="utf-8"))
+                    should_delete = data.get("file_name") == file_name
+                except Exception as e:
+                    self.log.warning(f"Failed to inspect {file_path.name} during clear: {e}")
+                    should_delete = False
+
+            if should_delete:
                 file_path.unlink()
                 count += 1
 

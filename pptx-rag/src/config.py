@@ -74,6 +74,12 @@ class Config:
     def logs_dir(self) -> Path:
         return self.data_dir / "logs"
 
+    @property
+    def workspace_dir(self) -> Path:
+        default_path = self.data_dir / "workspace"
+        override = os.getenv("WORKSPACE_DIR")
+        return Path(override) if override else default_path
+
     # Image Server
     @property
     def image_server_port(self) -> int:
