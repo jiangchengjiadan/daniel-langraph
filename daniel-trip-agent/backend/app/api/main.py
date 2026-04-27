@@ -56,6 +56,7 @@ async def startup_event():
     try:
         validate_config()
         print("\n✅ 配置验证通过")
+        print(f"🔍 LangSmith tracing: {'enabled' if settings.langsmith_active else 'disabled'}")
     except ValueError as e:
         print(f"\n❌ 配置验证失败:\n{e}")
         print("\n请检查.env文件并确保所有必要的配置项都已设置")
@@ -93,7 +94,9 @@ async def health():
     return {
         "status": "healthy",
         "service": settings.app_name,
-        "version": settings.app_version
+        "version": settings.app_version,
+        "langsmith_tracing": settings.langsmith_active,
+        "langsmith_project": settings.langsmith_project if settings.langsmith_active else None
     }
 
 
