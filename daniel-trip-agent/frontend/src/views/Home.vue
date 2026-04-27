@@ -1,12 +1,10 @@
 <template>
   <div class="planner-home">
     <section class="planner-hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Trip Planner Style Demo</p>
-        <h1>规划一条更像成品的旅行路线</h1>
-        <p class="hero-text">
-          支持多个城市，按顺序自动拆分天数，并结合天气、景点、酒店与预算生成结构化行程。
-        </p>
+      <div class="hero-map-panel">
+        <div class="hero-map-shell">
+          <div id="home-amap-container" class="hero-map"></div>
+        </div>
       </div>
 
       <div class="planner-panel">
@@ -113,12 +111,21 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, watch, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { Dayjs } from 'dayjs'
+import AMapLoader from '@amap/amap-jsapi-loader'
 import { generateTripPlan } from '@/services/api'
 import type { TripFormData } from '@/types'
+
+declare global {
+  interface Window {
+    _AMapSecurityConfig: {
+      securityJsCode: string
+    }
+  }
+}
 
 const router = useRouter()
 const loading = ref(false)
@@ -126,6 +133,7 @@ const loadingProgress = ref(0)
 const loadingStatus = ref('')
 const cityInput = ref('')
 const preferenceOptions = ['历史文化', '自然风光', '美食', '购物', '艺术', '休闲']
+let homeMap: any = null
 
 type PlannerFormState = Omit<TripFormData, 'start_date' | 'end_date'> & {
   start_date: Dayjs | null
@@ -158,6 +166,18 @@ watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
     return
   }
   formData.travel_days = days
+})
+
+onMounted(async () => {
+  await nextTick()
+  initHeroMap()
+})
+
+onBeforeUnmount(() => {
+  if (homeMap) {
+    homeMap.destroy()
+    homeMap = null
+  }
 })
 
 const addCity = () => {
@@ -241,6 +261,34 @@ const handleSubmit = async () => {
     }, 800)
   }
 }
+
+const initHeroMap = async () => {
+  try {
+    window._AMapSecurityConfig = {
+      securityJsCode: import.meta.env.VITE_AMAP_SECURITY_JS_CODE || ''
+    }
+
+    const AMap = await AMapLoader.load({
+      key: import.meta.env.VITE_AMAP_WEB_KEY,
+      version: '2.0',
+      plugins: ['AMap.Scale', 'AMap.ToolBar']
+    })
+
+    homeMap = new AMap.Map('home-amap-container', {
+      zoom: 4.3,
+      center: [104.195397, 35.86166],
+      viewMode: '2D',
+      mapStyle: 'amap://styles/normal',
+      zoomEnable: true,
+      dragEnable: true
+    })
+
+    homeMap.addControl(new AMap.Scale())
+    homeMap.addControl(new AMap.ToolBar({ position: 'RB' }))
+  } catch (error) {
+    console.error('首页地图加载失败:', error)
+  }
+}
 </script>
 
 <style scoped>
@@ -259,31 +307,24 @@ const handleSubmit = async () => {
   margin: 0 auto;
 }
 
-.hero-copy {
-  padding-top: 32px;
+.hero-map-panel {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
 }
 
-.eyebrow {
-  margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #5b6b8a;
-  text-transform: uppercase;
+.hero-map-shell {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
 }
 
-.hero-copy h1 {
-  margin: 0 0 16px;
-  font-size: 52px;
-  line-height: 1.05;
-  color: #0f172a;
-}
-
-.hero-text {
-  max-width: 560px;
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.7;
-  color: #4a5568;
+.hero-map {
+  width: 100%;
+  height: 760px;
 }
 
 .planner-panel {
@@ -409,10 +450,6 @@ const handleSubmit = async () => {
   .planner-hero {
     grid-template-columns: 1fr;
   }
-
-  .hero-copy {
-    padding-top: 0;
-  }
 }
 
 @media (max-width: 768px) {
@@ -420,8 +457,8 @@ const handleSubmit = async () => {
     padding: 20px 16px 28px;
   }
 
-  .hero-copy h1 {
-    font-size: 36px;
+  .hero-map {
+    height: 420px;
   }
 
   .grid-row,
