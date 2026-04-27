@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "industrial_rag": "./backend/agent.py:graph"
+  },
+  "env": ".env"
+}

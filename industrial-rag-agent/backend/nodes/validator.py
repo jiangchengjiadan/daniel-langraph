@@ -10,7 +10,7 @@ from backend.models.providers import get_llm
 logger = get_logger(__name__)
 
 
-def validate_topic_relevance(state: ConversationState) -> ConversationState:
+def validate_topic_relevance(state: ConversationState) -> dict:
     """
     验证用户查询是否属于电机售后知识领域。
     """
@@ -68,7 +68,6 @@ def validate_topic_relevance(state: ConversationState) -> ConversationState:
     confidence_match = re.search(r'\b(HIGH|MEDIUM|LOW)\b', raw_response, re.IGNORECASE)
     confidence = confidence_match.group(1).upper() if confidence_match else "MEDIUM"
 
-    state["topic_relevance"] = classification
     logger.info(f"话题分类: {classification} (置信度: {confidence})")
 
-    return state
+    return {"topic_relevance": classification}

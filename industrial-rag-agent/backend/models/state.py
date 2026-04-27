@@ -1,19 +1,22 @@
 """对话状态模型定义"""
-from typing import List, Optional, TypedDict
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from typing import Annotated, List, Optional, TypedDict
+from langgraph.graph import add_messages
 from langchain_core.documents import Document
 from pydantic import BaseModel, Field
 
 
 class ConversationState(TypedDict):
-    """对话状态 - 工作流中传递的状态数据结构"""
-    conversation_history: Optional[List[BaseMessage]]  # 对话历史
+    """对话状态 - 工作流中传递的状态数据结构
+
+    messages 字段使用 add_messages reducer，自动管理消息追加，
+    替代原来的 conversation_history + current_query。
+    """
+    messages: Annotated[list, add_messages]             # 对话消息（自动追加）
     retrieved_documents: Optional[List[Document]]       # 检索到的文档
     topic_relevance: Optional[str]                      # 话题相关性分类
     enhanced_query: Optional[str]                       # 增强后的查询
     should_generate: Optional[bool]                     # 是否应该生成响应
     optimization_attempts: Optional[int]                # 查询优化尝试次数
-    current_query: Optional[HumanMessage]              # 当前用户查询
 
 
 class TopicRelevance(BaseModel):

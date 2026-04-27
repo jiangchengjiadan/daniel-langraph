@@ -5,11 +5,12 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from backend.models.state import ConversationState
 from backend.logging.config import get_logger
 from backend.models.providers import get_llm
+from backend.nodes.utils import extract_text_content
 
 logger = get_logger(__name__)
 
 
-def enhance_user_query(state: ConversationState) -> ConversationState:
+def enhance_user_query(state: ConversationState) -> dict:
     """
     增强用户查询，将上下文相关的查询转化为自包含的优化查询。
 
@@ -17,32 +18,18 @@ def enhance_user_query(state: ConversationState) -> ConversationState:
     1. 第一个问题直接使用原始查询
     2. 有对话历史时，生成简洁的增强查询（不超过30字）
     """
-    original_query = state["current_query"].content
+    messages = state["messages"]
+    original_query = extract_text_content(messages[-1].content)
     logger.info(f"增强查询: {original_query}")
 
-    # 初始化状态
-    state["retrieved_documents"] = []
-    state["topic_relevance"] = ""
-    state["enhanced_query"] = ""
-    state["should_generate"] = False
-    state["optimization_attempts"] = 0
-
-    # 确保对话历史存在
-    if "conversation_history" not in state or state["conversation_history"] is None:
-        state["conversation_history"] = []
-
-    # 将当前查询添加到历史
-    if state["current_query"] not in state["conversation_history"]:
-        state["conversation_history"].append(state["current_query"])
-
     # 检查是否有对话上下文（第一个问题直接使用原始查询）
-    if len(state["conversation_history"]) <= 1:
+    if len(messages) <= 1:
         # 首个问题，直接使用原始查询
-        state["enhanced_query"] = original_query
-        logger.info(f"首个问题 - 使用原始查询: {state['enhanced_query']}")
+        enhanced_query = original_query
+        logger.info(f"首个问题 - 使用原始查询: {enhanced_query}")
     else:
         # 有对话历史，生成简洁的增强查询
-        previous_messages = state["conversation_history"][:-1]
+        previous_messages = messages[:-1]
         current_question = original_query
 
         # 构建简洁的增强提示
@@ -69,13 +56,18 @@ def enhance_user_query(state: ConversationState) -> ConversationState:
         llm = get_llm(temperature=0.1)
 
         response = llm.invoke(enhancement_prompt.format())
-        enhanced_question = response.content.strip()
+        enhanced_query = response.content.strip()
 
         # 限制长度
-        if len(enhanced_question) > 50:
-            enhanced_question = enhanced_question[:50].rsplit(' ', 1)[0] + "..."
+        if len(enhanced_query) > 50:
+            enhanced_query = enhanced_query[:50].rsplit(' ', 1)[0] + "..."
 
-        logger.info(f"增强查询结果: {enhanced_question}")
-        state["enhanced_query"] = enhanced_question
+        logger.info(f"增强查询结果: {enhanced_query}")
 
-    return state
+    return {
+        "enhanced_query": enhanced_query,
+        "retrieved_documents": [],
+        "topic_relevance": "",
+        "should_generate": False,
+        "optimization_attempts": 0,
+    }

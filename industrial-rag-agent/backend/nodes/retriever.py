@@ -6,7 +6,7 @@ from backend.logging.config import get_logger
 logger = get_logger(__name__)
 
 
-def fetch_relevant_content(state: ConversationState) -> ConversationState:
+def fetch_relevant_content(state: ConversationState) -> dict:
     """
     从向量数据库中检索与增强查询相关的文档。
     """
@@ -25,5 +25,4 @@ def fetch_relevant_content(state: ConversationState) -> ConversationState:
         preview = doc.page_content[:60].replace("\n", " ")
         logger.debug(f"  文档 {i+1}: [{category}] {preview}...")
 
-    state["retrieved_documents"] = retrieved_docs
-    return state
+    return {"retrieved_documents": retrieved_docs}
