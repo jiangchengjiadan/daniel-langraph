@@ -4,6 +4,7 @@ langchain>=1.2.0
 langchain-openai>=1.1.6
 langchain-core>=1.2.5
 langchain-community>=0.4.1
+langsmith>=0.3.0
 
 # FastAPI和相关依赖
 fastapi>=0.115.0

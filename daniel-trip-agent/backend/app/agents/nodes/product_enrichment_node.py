@@ -46,6 +46,11 @@ def _best_hotel_product(hotel: dict[str, Any] | None, products: list[dict[str, A
     return products[0]
 
 
+def _hotel_price_is_valid(product: dict[str, Any]) -> bool:
+    """只有通过解析校验的 FlyAI 酒店价格才覆盖原始预算。"""
+    return bool(product.get("price_valid")) and product.get("price") is not None
+
+
 def _recalculate_budget(itinerary: dict[str, Any]) -> None:
     days = itinerary.get("days", []) or []
     total_attractions = 0
@@ -99,12 +104,13 @@ def product_enrichment_node(state: TripPlanState) -> TripPlanState:
         hotel = day.get("hotel")
         product = _best_hotel_product(hotel, hotel_products)
         if hotel and product:
-            price = product.get("price")
+            price_is_valid = _hotel_price_is_valid(product)
+            price = product.get("price") if price_is_valid else None
             hotel.update(
                 {
                     "name": product.get("name") or hotel.get("name", ""),
                     "address": product.get("address") or hotel.get("address", ""),
-                    "price_range": product.get("price_text") or hotel.get("price_range", ""),
+                    "price_range": product.get("price_text") if price_is_valid else hotel.get("price_range", ""),
                     "rating": str(product.get("score") or hotel.get("rating", "")),
                     "type": product.get("star") or hotel.get("type", ""),
                     "estimated_cost": int(price or hotel.get("estimated_cost") or 0),

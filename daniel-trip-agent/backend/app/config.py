@@ -16,6 +16,35 @@ if helloagents_env.exists():
     load_dotenv(helloagents_env, override=False)  # 不覆盖已有的环境变量
 
 
+def _get_bool(name: str, default: bool = False) -> bool:
+    """读取布尔环境变量"""
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _configure_langsmith() -> None:
+    """在LangChain组件初始化前配置LangSmith自动追踪"""
+    enabled = _get_bool("LANGSMITH_ENABLED", False)
+    api_key = os.getenv("LANGSMITH_API_KEY")
+    project = os.getenv("LANGSMITH_PROJECT", "daniel-trip-agent")
+    endpoint = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    workspace_id = os.getenv("LANGSMITH_WORKSPACE_ID")
+
+    if enabled and api_key:
+        os.environ["LANGSMITH_TRACING"] = "true"
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGSMITH_API_KEY"] = api_key
+        os.environ["LANGSMITH_PROJECT"] = project
+        os.environ["LANGSMITH_ENDPOINT"] = endpoint
+        if workspace_id:
+            os.environ["LANGSMITH_WORKSPACE_ID"] = workspace_id
+    else:
+        os.environ.pop("LANGSMITH_TRACING", None)
+        os.environ.pop("LANGCHAIN_TRACING_V2", None)
+
+
+_configure_langsmith()
+
+
 class Settings(BaseSettings):
     """应用配置"""
 
@@ -52,6 +81,13 @@ class Settings(BaseSettings):
     # 日志配置
     log_level: str = "INFO"
 
+    # LangSmith tracing配置
+    langsmith_enabled: bool = _get_bool("LANGSMITH_ENABLED", False)
+    langsmith_api_key: Optional[str] = os.getenv("LANGSMITH_API_KEY")
+    langsmith_project: str = os.getenv("LANGSMITH_PROJECT", "daniel-trip-agent")
+    langsmith_endpoint: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    langsmith_workspace_id: Optional[str] = os.getenv("LANGSMITH_WORKSPACE_ID")
+
     class Config:
         env_file = ".env"
         case_sensitive = False
@@ -60,6 +96,11 @@ class Settings(BaseSettings):
     def get_cors_origins_list(self) -> List[str]:
         """获取CORS origins列表"""
         return [origin.strip() for origin in self.cors_origins.split(',')]
+
+    @property
+    def langsmith_active(self) -> bool:
+        """LangSmith tracing是否真正启用"""
+        return self.langsmith_enabled and bool(self.langsmith_api_key)
 
 
 # 创建全局配置实例
@@ -85,6 +126,9 @@ def validate_config():
     llm_api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not llm_api_key:
         warnings.append("LLM_API_KEY或OPENAI_API_KEY未配置,LLM功能可能无法使用")
+
+    if settings.langsmith_enabled and not settings.langsmith_api_key:
+        warnings.append("LANGSMITH_ENABLED=true 但 LANGSMITH_API_KEY 未配置, tracing 不会生效")
 
     if errors:
         error_msg = "配置错误:\n" + "\n".join(f"  - {e}" for e in errors)
@@ -115,5 +159,9 @@ def print_config():
     print(f"LLM API Key: {'已配置' if llm_api_key else '未配置'}")
     print(f"LLM Base URL: {llm_base_url}")
     print(f"LLM Model: {llm_model}")
+    print(f"LangSmith Tracing: {'已启用' if settings.langsmith_active else '未启用'}")
+    if settings.langsmith_active:
+        print(f"LangSmith Project: {settings.langsmith_project}")
+        print(f"LangSmith Endpoint: {settings.langsmith_endpoint}")
     print(f"FlyAI增强: {'已启用' if settings.enable_flyai else '未启用'}")
     print(f"日志级别: {settings.log_level}")

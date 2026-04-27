@@ -52,11 +52,25 @@ def _flyai_command_prefix() -> list[str] | None:
     return None
 
 
+def _is_masked_price_text(value: Any) -> bool:
+    """识别 1**、2xx 等被脱敏或不完整的价格文本。"""
+    if not isinstance(value, str):
+        return False
+
+    normalized = value.strip().lower().replace(",", "")
+    if not normalized:
+        return False
+
+    return bool(re.search(r"\d[\d.,]*\s*[*xX]+", normalized))
+
+
 def _parse_price(value: Any) -> int | None:
     """从 '¥123起'、'123' 等价格文本中提取整数。"""
     if isinstance(value, (int, float)):
         return int(value)
     if not isinstance(value, str):
+        return None
+    if _is_masked_price_text(value):
         return None
 
     match = re.search(r"\d+(?:\.\d+)?", value.replace(",", ""))
@@ -177,13 +191,15 @@ async def search_hotel_products(
     items = await _run_flyai("search-hotels", params)
     products = []
     for item in items:
-        price = _parse_price(item.get("price"))
+        price_text = item.get("price", "")
+        price = _parse_price(price_text)
         products.append(
             {
                 "name": item.get("name", ""),
                 "address": item.get("address", ""),
                 "price": price,
-                "price_text": item.get("price", ""),
+                "price_text": price_text,
+                "price_valid": price is not None,
                 "score": item.get("score", ""),
                 "score_desc": item.get("scoreDesc", ""),
                 "star": item.get("star", ""),

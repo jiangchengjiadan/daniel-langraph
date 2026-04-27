@@ -234,6 +234,22 @@ flyai search-hotels --dest-name "北京" --key-words "豪华酒店"
 ℹ️ FlyAI增强跳过: search-poi 连续2次未返回可用数据 (...)
 ```
 
+## 🔍 LangSmith Tracing（可选）
+
+项目支持通过 LangSmith 记录 LangGraph 和 LangChain 调用链路，便于排查规划节点、工具调用和模型输出。配置方式如下：
+
+```bash
+# backend/.env
+LANGSMITH_ENABLED=true
+LANGSMITH_API_KEY=your_langsmith_api_key
+LANGSMITH_PROJECT=daniel-trip-agent
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+# 可选：多 workspace 场景再配置
+# LANGSMITH_WORKSPACE_ID=your_workspace_id
+```
+
+启用后，后端启动日志会打印 tracing 状态，`GET /health` 也会返回 `langsmith_tracing` 和 `langsmith_project` 字段。
+
 ## 📄 API文档
 
 启动后端服务后,访问 `http://localhost:8000/docs` 查看完整的API文档。
