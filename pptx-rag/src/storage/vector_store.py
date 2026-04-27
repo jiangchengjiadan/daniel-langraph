@@ -4,11 +4,12 @@
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+from ..config import config
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
-from ..config import config
 from ..models import PageChunk
 from ..logging import log
 

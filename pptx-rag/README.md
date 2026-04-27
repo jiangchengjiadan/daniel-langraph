@@ -1,6 +1,9 @@
-# 文档 RAG 智能问答系统
+# 文档 RAG 与 Deep Research 工作台
 
-基于 RAG 的智能文档问答系统，支持 PPT、PDF、文本和图片格式，支持图文并茂的回答，让用户通过问答快速查询文档内容。
+基于 LangChain + Deep Agents 的文档工作台，支持 PPT、PDF、文本和图片格式。系统同时提供两种能力：
+
+- **问答模式**：基于 RAG 的文档问答，返回带来源和图片的回答
+- **研究模式**：围绕一个开放式研究任务，自动生成计划、证据和研究报告
 
 ## 特性
 
@@ -18,6 +21,21 @@
 - **混合检索**: BM25 关键词 + Vector 语义搜索，可动态调整权重
 - **图文并茂**: 回答中保留 Markdown 图片链接
 - **参考来源**: 清晰标注参考页码
+- **双工作模式**:
+  - 问答模式：适合快速查文档
+  - 研究模式：适合生成任务计划、证据文件和 Markdown 报告
+- **研究产物可见**:
+  - `task.md`
+  - `documents_overview.md`
+  - `plan.md`
+  - `evidence/q*.md`
+  - `drafts/report_v1.md`
+  - `quality_report.md`
+  - `final/final_report.md`
+- **Deep Agents 接入**:
+  - 顶层由 Deep Agents 驱动研究任务
+  - 主路径采用高层 `run_research_once` 工具保证收敛
+  - 注册了 `document_analyst`、`evidence_collector`、`report_writer` 子代理作为补充能力
 
 
 ## 技术栈
@@ -25,11 +43,13 @@
 | 组件 | 选择 |
 |------|------|
 | LLM 框架 | LangChain |
+| Agent Harness | Deep Agents |
 | LLM 模型 | OpenAI API 兼容接口 |
 | Embeddings | OpenAI Embeddings (兼容接口) |
 | 向量库 | FAISS |
 | DocStore | LocalFileStore (JSON 文件) |
 | 前端 | Streamlit |
+| Tracing | LangSmith（可选开关） |
 | 图片存储 | 本地 HTTP 服务器 |
 
 ## 架构
@@ -58,8 +78,35 @@ graph TD
     O --> Q[混合检索 BM25+Vector]
     P --> Q
     Q --> R[LLM 回答生成]
-    R --> S[Streamlit 前端]
+    R --> S[问答模式]
+    Q --> T[Deep Research Service]
+    T --> U[Deep Agents Orchestrator]
+    U --> V[研究计划/证据/报告]
+    V --> W[研究模式]
 ```
+
+## Deep Research 架构补充
+
+研究模式不是简单把用户问题直接喂给 LLM，而是先通过知识服务层做文档理解与证据收集，再由研究协调器输出工作区产物。
+
+```mermaid
+flowchart TD
+    A["研究任务"] --> B["DeepResearchAgent"]
+    B --> C["write_todos 制定计划"]
+    C --> D["run_research_once 高层工具"]
+    D --> E["DocumentKnowledgeService"]
+    E --> F["list_documents / search_evidence / get_page_content"]
+    F --> G["DeepResearchService"]
+    G --> H["task.md / plan.md / evidence/*.md"]
+    G --> I["drafts/report_v1.md"]
+    G --> J["quality_report.md"]
+    G --> K["final/final_report.md"]
+```
+
+相关设计文档：
+
+- [Deep Research 技术方案](/Users/danielhe/enviroment/server/workspace/daniel-langraph/pptx-rag/docs/deep-research-agent-technical-design.md:1)
+- [Deep Research 任务清单](/Users/danielhe/enviroment/server/workspace/daniel-langraph/pptx-rag/docs/deep-research-agent-task-list.md:1)
 
 ## 目录结构
 
@@ -89,8 +136,18 @@ pptx-rag/
 │   ├── retriever/          # 检索层
 │   │   ├── hybrid_retriever.py  # 混合检索
 │   │   └── parent_retriever.py  # 父块检索
-│   ├── rag/                # RAG 核心
-│   │   └── chain.py        # 主处理链
+│   ├── rag/                # RAG 问答链
+│   │   └── chain.py        # 问答模式主处理链
+│   ├── services/           # 可复用知识服务层
+│   │   └── document_knowledge.py
+│   ├── deep_research/      # Deep Research 模块
+│   │   ├── agent.py
+│   │   ├── services.py
+│   │   ├── tools.py
+│   │   ├── quality.py
+│   │   ├── workspace.py
+│   │   ├── prompts.py
+│   │   └── schemas.py
 │   └── server/             # 服务
 │       └── image_server.py # 图片 HTTP 服务器
 ├── data/                   # 数据目录
@@ -108,7 +165,6 @@ pptx-rag/
 ## 安装
 
 ```bash
-# 克隆项目
 cd pptx-rag
 
 # 创建虚拟环境（推荐）
@@ -122,6 +178,8 @@ pip install -r requirements.txt
 # 配置 API 密钥（见下方配置部分）
 ```
 
+如果你本地已经使用 `conda` 管理环境，也可以直接在现有环境里安装新增依赖。
+
 ## 配置
 
 复制 `.env.example` 为 `.env` 并修改：
@@ -132,6 +190,12 @@ API_BASE_URL=https://api.openai.com/v1  # 或你的自定义 API 端点
 API_KEY=sk-your-api-key-here
 LLM_MODEL=gpt-4  # 或你的自定义模型名称
 EMBEDDING_MODEL=text-embedding-3-large  # 或你的自定义 embedding 模型
+
+# LangSmith（可选，默认关闭）
+LANGSMITH_ENABLED=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=pptx-rag
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 
 # 数据目录
 DATA_DIR=./data
@@ -159,6 +223,19 @@ LLM_NUM_PREDICT=2048
 - 智谱 AI (GLM)
 - 任何 OpenAI 兼容的 API 端点
 
+### LangSmith 开关说明
+
+项目已内置 LangSmith tracing 开关，默认关闭，不配置也可以正常运行。
+
+- 关闭状态：`LANGSMITH_ENABLED=false`
+- 开启状态：需要同时配置
+  - `LANGSMITH_ENABLED=true`
+  - `LANGSMITH_API_KEY`
+  - 可选 `LANGSMITH_PROJECT`
+  - 可选 `LANGSMITH_ENDPOINT`
+
+开启后，RAG 问答、文档处理、Deep Research 与 Deep Agents 路径都会沿用同一进程内的 LangSmith tracing 配置。Streamlit 侧边栏会显示当前状态。
+
 ## 使用
 
 ```bash
@@ -172,8 +249,30 @@ streamlit run app/streamlit_app.py
 
 1. **上传文档**: 侧边栏上传文档文件（支持 PPT、PDF、文本、图片）
 2. **自动处理**: 点击"处理文档"，系统自动解析、提取内容
-3. **开始问答**: 在主界面输入问题
-4. **查看回答**: 获得图文并茂的回答和参考来源
+3. **选择模式**:
+   - 问答模式：直接提问
+   - 研究模式：输入研究任务并选择文档范围
+4. **查看结果**:
+   - 问答模式：获得图文并茂的回答和参考来源
+   - 研究模式：查看计划、证据、质量检查和最终报告
+
+### 研究模式验证
+
+进入“研究模式”后，可以选择一个或多个已处理文档，然后输入类似任务：
+
+- `请总结 PLC 故障判断培训文档中与电源故障诊断相关的要点，生成一份简短研究报告。`
+- `请对比文档中 S7-200 和 S7-300 的结构差异，并输出一份培训版讲义。`
+- `请整理与 PLC 指示灯判断有关的内容，保留关键图片和页码来源。`
+
+当前页面会显示：
+
+- `execution_mode`
+- `execution_note`
+- 研究计划
+- 证据文件
+- 最终报告
+
+正常情况下，Deep Agents 路径会返回 `execution_mode=deepagents`。
 
 ### 示例问题（PLC故障判断培训.pptx）
 
@@ -237,6 +336,10 @@ flowchart TD
   - 调整 BM25/向量检索权重
   - 设置检索结果数量
   - 调整 LLM Temperature
+- **研究设置**:
+  - 选择研究范围文档
+  - 输入研究任务
+  - 查看计划、证据、终稿
 - **清空文档**: 清除所有已加载的文档
 
 ## 核心设计
@@ -257,6 +360,13 @@ flowchart TD
 2. 启动本地 HTTP 服务器提供图片访问
 3. 在文本中插入 `![描述](http://localhost:8080/...)` 占位符
 4. 前端 Markdown 渲染时自动显示图片
+
+### Deep Research 设计要点
+
+1. **知识服务层解耦**：先把文档加载、检索、页内容读取从 `RAGChain` 中拆出来，形成可复用的 `DocumentKnowledgeService`
+2. **高层工具优先**：Deep Agents 主代理优先调用 `run_research_once`，避免复杂任务下低层工具循环过长
+3. **子代理补充**：注册 `document_analyst`、`evidence_collector`、`report_writer`，必要时通过 `task` 调用
+4. **产物可追踪**：所有中间结果和终稿都落盘到工作区，便于调试、教学和复查
 
 ### 去重机制
 

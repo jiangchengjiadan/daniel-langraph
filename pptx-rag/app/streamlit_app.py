@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 
 from src.config import config
+from src.deep_research import DeepResearchAgent
 from src.rag.chain import RAGChain
 from src.server.image_server import ImageServer
 from src.logging import log
@@ -50,15 +51,29 @@ if "image_server" not in st.session_state:
     except Exception as e:
         st.warning(f"图片服务器启动失败: {e}")
 
+if "research_agent" not in st.session_state:
+    try:
+        st.session_state.research_agent = DeepResearchAgent(
+            service=None
+        )
+        log.info("DeepResearchAgent initialized")
+    except Exception as e:
+        st.warning(f"研究代理初始化失败: {e}")
+
 
 def main():
     """Main application"""
-    st.title("文档 RAG 智能问答系统")
-    st.markdown("基于 RAG 的智能文档问答，支持 PPT、PDF、文本和图片格式，支持图文并茂的回答")
+    st.title("文档 RAG 与 Deep Research 工作台")
+    st.markdown("支持文档问答与研究任务两种模式，研究模式会输出计划、证据和报告产物。")
 
     # Sidebar
     with st.sidebar:
         st.header("文档管理")
+        mode = st.radio("工作模式", ["问答模式", "研究模式"], key="app_mode")
+        langsmith_status = "已开启" if config.langsmith_active else "未开启"
+        st.caption(f"LangSmith Tracing: `{langsmith_status}`")
+        if config.langsmith_active:
+            st.caption(f"Project: `{config.langsmith_project}`")
 
         # Initialize upload state
         if "uploading_file" not in st.session_state:
@@ -126,10 +141,16 @@ def main():
         # Document selector for Q&A
         if documents:
             st.divider()
-            st.subheader("问答设置")
+            st.subheader("文档选择")
             doc_options = [d["file_name"] for d in documents]
             st.session_state.selected_doc = st.selectbox(
                 "选择文档", ["所有文档"] + doc_options, key="doc_selector"
+            )
+            st.session_state.research_docs = st.multiselect(
+                "研究模式文档范围",
+                options=doc_options,
+                default=doc_options,
+                key="research_doc_selector",
             )
 
             # Retrieval weights
@@ -191,9 +212,16 @@ def main():
             st.rerun()
 
     # Main content
+    if mode == "问答模式":
+        render_chat_mode()
+    else:
+        render_research_mode(documents)
+
+
+def render_chat_mode():
+    """Render the original Q&A UI."""
     st.header("智能问答")
 
-    # Chat input
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -236,7 +264,6 @@ def main():
                         # Fallback: show as markdown if st.image fails
                         st.markdown(f"![{part[2]}]({part[1]})")
 
-    # Chat input
     # Get selected document from sidebar (default to None for all docs)
     selected_doc = st.session_state.get("selected_doc")
     file_name = None if not selected_doc or selected_doc == "所有文档" else selected_doc
@@ -275,6 +302,81 @@ def main():
             st.session_state.messages.append(
                 {"role": "assistant", "content": result.answer}
             )
+
+
+def render_research_mode(documents):
+    """Render the deep research task UI."""
+    st.header("Deep Research")
+    st.caption("输入一个研究任务，系统会生成计划、证据文件和 Markdown 报告。")
+    st.caption(f"当前研究运行时: `{st.session_state.research_agent.runtime_mode}`")
+
+    if "latest_research_result" not in st.session_state:
+        st.session_state.latest_research_result = None
+
+    selected_documents = st.session_state.get("research_docs", [])
+    if documents and not selected_documents:
+        st.info("研究模式默认使用全部已处理文档。也可以在左侧手动选择部分文档。")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        task = st.text_area(
+            "研究任务",
+            value=(
+                "请总结这些文档中与故障诊断相关的核心方法，"
+                "整理成一份带来源的研究报告。"
+            ),
+            height=140,
+            key="research_task_input",
+        )
+
+    with col2:
+        output_mode = st.selectbox(
+            "输出类型",
+            options=["研究报告", "培训讲义", "对比分析"],
+            key="research_output_mode",
+        )
+
+    run_disabled = not documents
+    if st.button("开始研究", type="primary", disabled=run_disabled):
+        try:
+            with st.spinner("正在生成研究计划、收集证据并撰写报告..."):
+                result = st.session_state.research_agent.run(
+                    task=task,
+                    selected_documents=selected_documents,
+                    output_mode=output_mode,
+                )
+                st.session_state.latest_research_result = result
+            st.success("研究任务完成")
+        except Exception as e:
+            st.error(f"研究任务执行失败: {e}")
+
+    result = st.session_state.latest_research_result
+    if not result:
+        return
+
+    plan_col, evidence_col, report_col = st.columns([1, 1, 2])
+
+    with plan_col:
+        st.subheader("研究计划")
+        st.caption(f"实际执行路径: `{result.execution_mode}`")
+        if result.execution_note:
+            st.info(result.execution_note)
+        for todo in result.todos:
+            st.markdown(f"- `{todo.status}` {todo.content}")
+        st.divider()
+        st.subheader("质量检查")
+        st.markdown(result.quality_summary)
+
+    with evidence_col:
+        st.subheader("产物文件")
+        for artifact in result.artifacts:
+            st.markdown(f"- **{artifact.label}**")
+            st.code(artifact.path)
+
+    with report_col:
+        st.subheader("最终报告")
+        st.markdown(result.final_report)
 
 
 if __name__ == "__main__":
