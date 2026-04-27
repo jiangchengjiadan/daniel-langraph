@@ -10,7 +10,7 @@ from backend.models.providers import get_llm
 logger = get_logger(__name__)
 
 
-def assess_document_relevance(state: ConversationState) -> ConversationState:
+def assess_document_relevance(state: ConversationState) -> dict:
     """
     评估每个检索到的文档是否与用户问题真正相关。
     """
@@ -63,9 +63,9 @@ def assess_document_relevance(state: ConversationState) -> ConversationState:
         if relevance == "RELEVANT":
             relevant_documents.append(doc)
 
-    # 更新状态
-    state["retrieved_documents"] = relevant_documents
-    state["should_generate"] = len(relevant_documents) > 0
-
     logger.info(f"最终相关文档数: {len(relevant_documents)}")
-    return state
+
+    return {
+        "retrieved_documents": relevant_documents,
+        "should_generate": len(relevant_documents) > 0,
+    }

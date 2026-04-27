@@ -10,7 +10,7 @@ from backend.models.providers import get_llm
 logger = get_logger(__name__)
 
 
-def optimize_search_query(state: ConversationState) -> ConversationState:
+def optimize_search_query(state: ConversationState) -> dict:
     """
     优化查询策略，当初始检索结果不佳时改进搜索查询。
 
@@ -23,7 +23,7 @@ def optimize_search_query(state: ConversationState) -> ConversationState:
     # 防止无限优化循环
     if current_attempts >= settings.MAX_OPTIMIZATION_ATTEMPTS:
         logger.info("已达到最大优化次数")
-        return state
+        return {}
 
     current_query = state["enhanced_query"]
 
@@ -51,9 +51,9 @@ def optimize_search_query(state: ConversationState) -> ConversationState:
     response = llm.invoke(formatted_prompt)
     optimized_query = response.content.strip()
 
-    # 更新状态
-    state["enhanced_query"] = optimized_query
-    state["optimization_attempts"] = current_attempts + 1
-
     logger.info(f"优化查询（第{current_attempts + 1}次）：{optimized_query}")
-    return state
+
+    return {
+        "enhanced_query": optimized_query,
+        "optimization_attempts": current_attempts + 1,
+    }

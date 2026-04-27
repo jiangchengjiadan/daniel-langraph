@@ -1,19 +1,20 @@
 # 工业设备售后智能客服 RAG Agent
 
-基于 LangGraph 的高级 RAG Agent 系统，为电机等工业设备提供智能售后客服对话服务。
+基于 LangGraph Platform 的高级 RAG Agent 系统，为电机等工业设备提供智能售后客服对话服务。使用 LangGraph Server 作为后端，Agent Chat UI 作为前端。
 
 ## 系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        React 前端 (端口 3000)                     │
-│                  工业技术风格对话界面                              │
+│               Agent Chat UI 前端 (端口 3000)                     │
+│           langchain-ai/agent-chat-ui (Next.js)                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      FastAPI 后端 (端口 8000)                     │
-│                       /api/chat 对话接口                          │
+│                LangGraph Server (端口 2024)                      │
+│          langgraph dev - 本地开发服务器                           │
+│          自动注入 Checkpointer / 线程管理 / SSE 流式             │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -26,7 +27,7 @@
 │       ▼              ▼              ▼              ▼             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
 │  │ 边情况   │  │ 查询优化 │← │ 生成响应 │← │ 路由决策 │        │
-│  │ 处理     │  │ (循环)   │  │         │  │         │        │
+│  │ 处理     │  │ (循环)   │  │          │  │          │        │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -41,12 +42,12 @@
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | React 18 + TypeScript + Vite |
-| 后端 | FastAPI + LangChain + LangGraph |
+| 前端 | Agent Chat UI (Next.js) |
+| 后端 | LangGraph Server + LangChain |
 | LLM | OpenAI-compatible API (`gpt-4o-mini` by default) |
 | Embedding | OpenAI-compatible API (`text-embedding-3-small` by default) |
 | 向量数据库 | ChromaDB |
-| 日志 | structlog |
+| 状态管理 | LangGraph `add_messages` reducer + Server 自动注入 Checkpointer |
 
 ## 工作流程
 
@@ -66,86 +67,44 @@ graph TD
     I --> J
 ```
 
-### LangGraph 整体图
-
-当前后端包含两个 LangGraph 编排：`/api/chat` 使用完整非流式图，`/api/chat/stream` 使用流式专用图。两者共享查询增强、话题验证、检索、相关性评估和查询优化节点；区别是流式接口不会在图内执行最终生成，而是把相关文档交给 API 层用 `llm.astream()` 推送 SSE。
-
-```mermaid
-graph TD
-    User["用户消息"] --> API{"FastAPI 路由"}
-
-    API -->|"POST chat"| FullGraph["完整 LangGraph 工作流"]
-    API -->|"POST chat stream"| StreamGraph["流式 LangGraph 工作流"]
-
-    subgraph Shared["共享检索与路由阶段"]
-        Enhance["enhance_query 查询增强"]
-        Validate["validate_topic 话题验证"]
-        Fetch["fetch_content Chroma 内容检索"]
-        Assess["assess_relevance 相关性评估"]
-        Optimize["optimize_query 查询优化"]
-        OffTopic["handle_off_topic 无关话题处理"]
-        NoResults["handle_no_results 无结果处理"]
-
-        Enhance --> Validate
-        Validate -->|"RELEVANT"| Fetch
-        Validate -->|"IRRELEVANT"| OffTopic
-        Fetch --> Assess
-        Assess -->|"无相关文档，未达上限"| Optimize
-        Optimize --> Fetch
-        Assess -->|"无相关文档，达到上限"| NoResults
-    end
-
-    FullGraph --> Enhance
-    StreamGraph --> Enhance
-
-    Assess -->|"有相关文档 chat"| Generate["generate_response 图内非流式生成"]
-    Generate --> FullReturn["返回 JSON 响应"]
-
-    Assess -->|"有相关文档 stream"| SSE["API 层 llm.astream SSE 流式输出"]
-    SSE --> Memory["写回 conversation_history"]
-    SSE --> StreamReturn["返回 text event stream"]
-
-    OffTopic --> StaticReturn["返回静态边界回复"]
-    NoResults --> StaticReturn
-```
-
 ## 功能特点
 
 1. **智能查询增强**：将上下文相关的对话改写为自包含的优化查询
 2. **话题验证**：判断问题是否属于工业设备领域
 3. **向量检索**：基于语义相似度检索知识库
-4. **相关性评估**：用LLM评估文档是否真正相关
+4. **相关性评估**：用 LLM 评估文档是否真正相关
 5. **自适应查询优化**：检索不佳时自动优化查询策略
-6. **上下文感知**：支持多轮对话，理解指代和省略
+6. **多轮对话**：LangGraph Server 自动管理线程和 Checkpointer，支持上下文感知
 
 ## 项目结构
 
 ```
 industrial-rag-agent/
+├── langgraph.json              # LangGraph Platform 配置
 ├── backend/
+│   ├── agent.py                # LangGraph 入口（导出 graph）
 │   ├── config/settings.py      # 集中配置
 │   ├── logging/config.py       # 日志配置
-│   ├── models/state.py         # ConversationState
-│   ├── nodes/                  # 处理节点
+│   ├── models/
+│   │   ├── state.py            # ConversationState（messages + add_messages）
+│   │   └── providers.py        # LLM / Embedding 提供者
+│   ├── nodes/                  # 工作流处理节点
 │   │   ├── enhancer.py         # 查询增强器
 │   │   ├── validator.py        # 话题验证器
 │   │   ├── retriever.py        # 内容检索器
 │   │   ├── assessor.py         # 相关性评估器
 │   │   ├── generator.py        # 响应生成器
 │   │   ├── optimizer.py        # 查询优化器
-│   │   └── handlers.py         # 边情况处理
-│   ├── workflow/builder.py     # LangGraph工作流
-│   ├── knowledge/base.py       # 知识库
-│   ├── api/routes.py           # FastAPI路由
-│   └── main.py                 # 应用入口
-├── frontend/                   # React 前端
-│   ├── src/
-│   │   ├── components/ChatWindow.tsx
-│   │   ├── App.tsx
-│   │   └── main.tsx
-│   └── vite.config.ts          # Vite配置
-├── logs/app.log                # 日志文件
-└── README.md
+│   │   ├── handlers.py         # 边情况处理
+│   │   └── utils.py            # 辅助函数（content 格式处理）
+│   ├── workflow/builder.py     # LangGraph 工作流编排
+│   └── knowledge/
+│       ├── base.py             # 知识库初始化与检索器
+│       └── chroma_db/          # ChromaDB 持久化数据
+├── agent-chat-ui/              # Agent Chat UI 前端（Next.js）
+│   └── .env                    # 前端配置（NEXT_PUBLIC_API_URL 等）
+├── logs/                       # 运行日志
+└── .env                        # 后端配置（API Key 等）
 ```
 
 ## 快速开始
@@ -157,37 +116,35 @@ industrial-rag-agent/
 - Node.js 18+
 - 可访问 OpenAI 兼容 API，并准备好 `OPENAI_API_KEY`
 
-### 2. 后端设置
+### 2. 配置环境变量
 
 ```bash
 cd industrial-rag-agent
-cd backend
 
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 配置模型 API
-cat > ../.env <<'EOF'
+# 后端配置
+cat > .env <<'EOF'
 OPENAI_API_KEY="your-api-key"
 LLM_MODEL="gpt-4o-mini"
 EMBEDDING_MODEL="text-embedding-3-small"
 EOF
-
-# 启动后端
-cd ..
-python -m backend.main
 ```
 
-后端运行在 `http://localhost:8000`
-
-### 3. 前端设置
+### 3. 启动后端（LangGraph Server）
 
 ```bash
-cd frontend
+# 安装依赖
+pip install -r backend/requirements.txt
+
+# 启动 LangGraph 开发服务器
+langgraph dev
+```
+
+后端运行在 `http://localhost:2024`，graph ID 为 `industrial_rag`。
+
+### 4. 启动前端（Agent Chat UI）
+
+```bash
+cd agent-chat-ui
 
 # 安装依赖
 npm install
@@ -196,9 +153,9 @@ npm install
 npm run dev
 ```
 
-前端运行在 `http://localhost:3000`
+前端运行在 `http://localhost:3000`，已预配置连接本地 LangGraph Server。
 
-### 4. 测试对话
+### 5. 测试对话
 
 打开浏览器访问 http://localhost:3000
 
@@ -208,16 +165,6 @@ npm run dev
 - "电机过热怎么处理？"
 - "轴承怎么更换？"
 - "保修政策是什么？"
-
-## 日志配置
-
-所有模块的日志统一输出到 `logs/app.log`，日志格式：
-
-```
-2024-01-08 10:30:45 | DEBUG    | backend.nodes.enhancer:35 | 增强查询: 电机无法启动
-2024-01-08 10:30:45 | INFO     | backend.nodes.validator:52 | 话题分类: RELEVANT
-2024-01-08 10:30:46 | INFO     | backend.nodes.retriever:23 | 检索到 2 篇文档
-```
 
 ## 知识库内容（10条）
 
@@ -234,35 +181,9 @@ npm run dev
 | 9 | 保修政策 | 产品保修条款与流程 |
 | 10 | 售后服务 | 售后服务流程与联系方式 |
 
-## API 接口
-
-### POST /api/chat
-
-对话接口
-
-**请求体：**
-```json
-{
-  "message": "电机无法启动怎么办？",
-  "thread_id": "session_123"
-}
-```
-
-**响应：**
-```json
-{
-  "response": "您好！电机无法启动可能有以下原因...",
-  "thread_id": "session_123"
-}
-```
-
-### GET /api/health
-
-健康检查
-
 ## 配置说明
 
-在 `.env` 文件中配置：
+### 后端配置（`.env`）
 
 ```env
 # LLM 配置
@@ -280,4 +201,23 @@ CHROMA_PERSIST_DIR="./backend/knowledge/chroma_db"
 # 日志
 LOG_LEVEL="DEBUG"
 LOG_FILE="./logs/app.log"
+```
+
+### 前端配置（`agent-chat-ui/.env`）
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:2024
+NEXT_PUBLIC_ASSISTANT_ID=industrial_rag
+```
+
+### LangGraph 配置（`langgraph.json`）
+
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "industrial_rag": "./backend/agent.py:graph"
+  },
+  "env": ".env"
+}
 ```
