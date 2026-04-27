@@ -41,7 +41,7 @@ async def plan_trip(request: TripRequest):
     try:
         logger.info(f"\n{'='*60}")
         logger.info(f"📥 收到旅行规划请求:")
-        logger.info(f"   城市: {request.city}")
+        logger.info("   城市: %s", " -> ".join(request.cities))
         logger.info(f"   日期: {request.start_date} - {request.end_date}")
         logger.info(f"   天数: {request.travel_days}")
         logger.info(f"   实现方式: {'LangGraph' if USE_LANGGRAPH else 'HelloAgents'}")

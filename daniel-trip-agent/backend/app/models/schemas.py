@@ -1,7 +1,7 @@
 """数据模型定义"""
 
 from typing import List, Optional, Union
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import date
 
 
@@ -9,7 +9,8 @@ from datetime import date
 
 class TripRequest(BaseModel):
     """旅行规划请求"""
-    city: str = Field(..., description="目的地城市", example="北京")
+    city: Optional[str] = Field(default=None, description="单个目的地城市（兼容旧接口）", example="北京")
+    cities: List[str] = Field(default_factory=list, description="多个目的地城市，按输入顺序规划", example=["上海", "苏州", "杭州"])
     start_date: str = Field(..., description="开始日期 YYYY-MM-DD", example="2025-06-01")
     end_date: str = Field(..., description="结束日期 YYYY-MM-DD", example="2025-06-03")
     travel_days: int = Field(..., description="旅行天数", ge=1, le=30, example=3)
@@ -17,11 +18,29 @@ class TripRequest(BaseModel):
     accommodation: str = Field(..., description="住宿偏好", example="经济型酒店")
     preferences: List[str] = Field(default=[], description="旅行偏好标签", example=["历史文化", "美食"])
     free_text_input: Optional[str] = Field(default="", description="额外要求", example="希望多安排一些博物馆")
-    
+
+    @model_validator(mode="after")
+    def normalize_cities(self):
+        normalized = [city.strip() for city in self.cities if city and city.strip()]
+        if self.city and self.city.strip() and self.city.strip() not in normalized:
+            normalized.insert(0, self.city.strip())
+        if not normalized:
+            raise ValueError("city 或 cities 至少提供一个目的地城市")
+        if len(normalized) > self.travel_days:
+            raise ValueError("城市数量不能超过旅行天数")
+        self.cities = normalized
+        self.city = normalized[0]
+        return self
+
+    @property
+    def primary_city(self) -> str:
+        return self.cities[0]
+
     class Config:
         json_schema_extra = {
             "example": {
                 "city": "北京",
+                "cities": ["北京"],
                 "start_date": "2025-06-01",
                 "end_date": "2025-06-03",
                 "travel_days": 3,
@@ -101,6 +120,7 @@ class Hotel(BaseModel):
 
 class DayPlan(BaseModel):
     """单日行程"""
+    city: str = Field(default="", description="当天所属城市")
     date: str = Field(..., description="日期 YYYY-MM-DD")
     day_index: int = Field(..., description="第几天(从0开始)")
     description: str = Field(..., description="当日行程描述")
@@ -146,7 +166,8 @@ class Budget(BaseModel):
 
 class TripPlan(BaseModel):
     """旅行计划"""
-    city: str = Field(..., description="目的地城市")
+    city: str = Field(..., description="主目的地城市")
+    cities: List[str] = Field(default_factory=list, description="目的地城市列表")
     start_date: str = Field(..., description="开始日期")
     end_date: str = Field(..., description="结束日期")
     days: List[DayPlan] = Field(..., description="每日行程")

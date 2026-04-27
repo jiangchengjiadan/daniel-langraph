@@ -13,7 +13,8 @@ from .nodes import (
     weather_query_node,
 )
 from ..models.schemas import TripRequest, TripPlan
-from typing import Literal
+from typing import Any, Dict, List, Literal
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -96,93 +97,169 @@ class LangGraphTripPlanner:
         # 否则进入错误处理
         return "error"
 
+    def _build_initial_state(self, request: TripRequest, city: str, start_date: str, end_date: str, travel_days: int) -> TripPlanState:
+        return {
+            "city": city,
+            "cities": request.cities,
+            "current_city": city,
+            "city_segments": [],
+            "start_date": start_date,
+            "end_date": end_date,
+            "travel_days": travel_days,
+            "preferences": request.preferences,
+            "accommodation": request.accommodation,
+            "transportation": request.transportation,
+            "free_text_input": request.free_text_input,
+            "attractions": [],
+            "weather_data": {},
+            "hotels": [],
+            "hotel_products": [],
+            "ticket_products": [],
+            "itinerary": None,
+            "budget": None,
+            "errors": [],
+            "execution_log": [],
+            "status": "processing",
+        }
+
+    def _allocate_city_segments(self, request: TripRequest) -> List[Dict[str, Any]]:
+        start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+        city_count = len(request.cities)
+        total_days = request.travel_days
+        base_days = max(1, total_days // city_count)
+        remainder = max(0, total_days - base_days * city_count)
+
+        segments: List[Dict[str, Any]] = []
+        cursor = start
+        for index, city in enumerate(request.cities):
+            allocated = base_days + (1 if index < remainder else 0)
+            if index == city_count - 1:
+                used_days = sum(segment["travel_days"] for segment in segments)
+                allocated = max(1, total_days - used_days)
+            segment_end = cursor + timedelta(days=allocated - 1)
+            segments.append(
+                {
+                    "city": city,
+                    "start_date": cursor.isoformat(),
+                    "end_date": segment_end.isoformat(),
+                    "travel_days": allocated,
+                }
+            )
+            cursor = segment_end + timedelta(days=1)
+        return segments
+
+    async def _run_single_city_plan(self, request: TripRequest, segment: Dict[str, Any]) -> TripPlan:
+        logger.info(
+            "📍 规划城市段: city=%s, date=%s~%s, days=%s",
+            segment["city"],
+            segment["start_date"],
+            segment["end_date"],
+            segment["travel_days"],
+        )
+        final_state = await self.app.ainvoke(
+            self._build_initial_state(
+                request=request,
+                city=segment["city"],
+                start_date=segment["start_date"],
+                end_date=segment["end_date"],
+                travel_days=segment["travel_days"],
+            )
+        )
+        logger.info(
+            "📦 城市段结束: city=%s, status=%s, has_itinerary=%s, errors=%s",
+            segment["city"],
+            final_state.get("status"),
+            bool(final_state.get("itinerary")),
+            len(final_state.get("errors", [])),
+        )
+        if not final_state.get("itinerary"):
+            error_msg = "未能生成行程计划"
+            if final_state.get("errors"):
+                error_msg += f": {'; '.join(final_state['errors'])}"
+            raise Exception(f"{segment['city']} {error_msg}")
+        return TripPlan(**final_state["itinerary"])
+
+    def _merge_trip_plans(self, request: TripRequest, plans: List[TripPlan]) -> TripPlan:
+        merged_days: List[Dict[str, Any]] = []
+        merged_weather: List[Dict[str, Any]] = []
+        total_budget = {
+            "total_attractions": 0,
+            "total_hotels": 0,
+            "total_meals": 0,
+            "total_transportation": 0,
+            "total": 0,
+        }
+        suggestions: List[str] = []
+
+        for plan in plans:
+            if plan.overall_suggestions:
+                suggestions.append(f"{plan.city}：{plan.overall_suggestions}")
+            for weather in plan.weather_info:
+                merged_weather.append(weather.model_dump())
+            if plan.budget:
+                total_budget["total_attractions"] += plan.budget.total_attractions
+                total_budget["total_hotels"] += plan.budget.total_hotels
+                total_budget["total_meals"] += plan.budget.total_meals
+                total_budget["total_transportation"] += plan.budget.total_transportation
+
+        day_index = 0
+        for plan in plans:
+            for day in plan.days:
+                day_dict = day.model_dump()
+                day_dict["city"] = plan.city
+                day_dict["day_index"] = day_index
+                merged_days.append(day_dict)
+                day_index += 1
+
+        total_budget["total"] = sum(total_budget.values()) - total_budget["total"]
+        merged_data = {
+            "city": request.primary_city,
+            "cities": request.cities,
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "days": merged_days,
+            "weather_info": merged_weather,
+            "overall_suggestions": "；".join(suggestions) if suggestions else f"建议按 {' -> '.join(request.cities)} 的顺序游览。",
+            "budget": total_budget,
+        }
+        return TripPlan(**merged_data)
+
     async def plan_trip(self, request: TripRequest) -> TripPlan:
-        """
-        执行旅行规划
-
-        Args:
-            request: 旅行请求
-
-        Returns:
-            旅行计划
-
-        Raises:
-            Exception: 如果规划失败
-        """
+        """执行旅行规划"""
         try:
             logger.info(f"\n{'='*60}")
-            logger.info(f"🚀 开始 LangGraph 旅行规划...")
-            logger.info(f"目的地: {request.city}")
+            logger.info("🚀 开始 LangGraph 旅行规划...")
+            logger.info("目的地: %s", " -> ".join(request.cities))
             logger.info(f"日期: {request.start_date} 至 {request.end_date}")
             logger.info(f"天数: {request.travel_days}天")
             logger.info(f"偏好: {', '.join(request.preferences) if request.preferences else '无'}")
             logger.info(f"{'='*60}\n")
 
-            # 构建初始状态
-            initial_state: TripPlanState = {
-                "city": request.city,
-                "start_date": request.start_date,
-                "end_date": request.end_date,
-                "travel_days": request.travel_days,
-                "preferences": request.preferences,
-                "accommodation": request.accommodation,
-                "transportation": request.transportation,
-                "free_text_input": request.free_text_input,
-                "attractions": [],
-                "weather_data": {},
-                "hotels": [],
-                "hotel_products": [],
-                "ticket_products": [],
-                "itinerary": None,
-                "budget": None,
-                "errors": [],
-                "execution_log": [],
-                "status": "processing"
-            }
-
-            # 执行图
-            logger.info("📊 开始执行 LangGraph 工作流...")
-            final_state = await self.app.ainvoke(initial_state)
-            logger.info(
-                "📦 LangGraph 工作流结束: status=%s, has_itinerary=%s, errors=%s",
-                final_state.get("status"),
-                bool(final_state.get("itinerary")),
-                len(final_state.get("errors", [])),
-            )
-
-            # 记录执行日志
-            if final_state.get("execution_log"):
-                logger.info("\n📋 执行日志:")
-                for log_entry in final_state["execution_log"]:
-                    node = log_entry.get("node", "unknown")
-                    status = log_entry.get("status", "unknown")
-                    logger.info(f"  - {node}: {status}")
-
-            # 记录错误信息
-            if final_state.get("errors"):
-                logger.warning("\n⚠️  错误信息:")
-                for error in final_state["errors"]:
-                    logger.warning(f"  - {error}")
-
-            # 检查是否有行程计划
-            if final_state.get("itinerary"):
-                trip_plan = TripPlan(**final_state["itinerary"])
-
-                logger.info(f"\n{'='*60}")
-                logger.info(f"✅ 旅行计划生成完成!")
-                logger.info(f"   城市: {trip_plan.city}")
-                logger.info(f"   天数: {len(trip_plan.days)}天")
-                if trip_plan.budget:
-                    logger.info(f"   总预算: {trip_plan.budget.total}元")
-                logger.info(f"{'='*60}\n")
-
-                return trip_plan
+            if len(request.cities) == 1:
+                trip_plan = await self._run_single_city_plan(
+                    request,
+                    {
+                        "city": request.primary_city,
+                        "start_date": request.start_date,
+                        "end_date": request.end_date,
+                        "travel_days": request.travel_days,
+                    },
+                )
             else:
-                # 如果没有行程计划，抛出异常
-                error_msg = "未能生成行程计划"
-                if final_state.get("errors"):
-                    error_msg += f": {'; '.join(final_state['errors'])}"
-                raise Exception(error_msg)
+                segments = self._allocate_city_segments(request)
+                plans = []
+                for segment in segments:
+                    plans.append(await self._run_single_city_plan(request, segment))
+                trip_plan = self._merge_trip_plans(request, plans)
+
+            logger.info(f"\n{'='*60}")
+            logger.info("✅ 旅行计划生成完成!")
+            logger.info("   城市: %s", " -> ".join(trip_plan.cities or [trip_plan.city]))
+            logger.info(f"   天数: {len(trip_plan.days)}天")
+            if trip_plan.budget:
+                logger.info(f"   总预算: {trip_plan.budget.total}元")
+            logger.info(f"{'='*60}\n")
+            return trip_plan
 
         except Exception as e:
             logger.error(f"❌ LangGraph 旅行规划失败: {str(e)}")
