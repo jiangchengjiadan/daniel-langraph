@@ -134,7 +134,24 @@
           <!-- 右侧:地图 -->
           <div class="right-map">
             <a-card id="map" title="📍 景点地图" :bordered="false" class="map-card">
-              <div id="amap-container" style="width: 100%; height: 100%"></div>
+              <div v-if="mapCities.length > 1" class="map-city-switcher">
+                <span class="map-city-switcher-label">查看城市</span>
+                <a-space wrap size="small">
+                  <a-button
+                    v-for="city in mapCities"
+                    :key="city"
+                    size="small"
+                    :type="selectedMapCity === city ? 'primary' : 'default'"
+                    @click="switchMapCity(city)"
+                  >
+                    {{ city }}
+                  </a-button>
+                </a-space>
+              </div>
+              <div v-if="mapStatusMessage" class="map-status-banner">
+                {{ mapStatusMessage }}
+              </div>
+              <div id="amap-container" class="map-container"></div>
             </a-card>
           </div>
         </div>
@@ -381,6 +398,13 @@ const tripPlan = ref<TripPlan | null>(null)
 const editMode = ref(false)
 const originalPlan = ref<TripPlan | null>(null)
 const displayCities = computed(() => tripPlan.value?.cities?.length ? tripPlan.value.cities.join(' -> ') : tripPlan.value?.city || '')
+const mapCities = computed(() => {
+  if (!tripPlan.value) return []
+  if (tripPlan.value.cities?.length) return tripPlan.value.cities
+  const uniqueCities = new Set<string>()
+  tripPlan.value.days.forEach(day => uniqueCities.add(day.city || tripPlan.value!.city))
+  return Array.from(uniqueCities)
+})
 const weatherCityByDate = computed(() => {
   const mapping: Record<string, string> = {}
   if (!tripPlan.value) return mapping
@@ -392,12 +416,19 @@ const weatherCityByDate = computed(() => {
 const attractionPhotos = ref<Record<string, string>>({})
 const activeSection = ref('overview')
 const activeDays = ref<number[]>([0]) // 默认展开第一天
+const selectedMapCity = ref('')
+const mapStatusMessage = ref('')
 let map: any = null
+let amapApi: any = null
+let mapMarkers: any[] = []
+let mapPolylines: any[] = []
 
 onMounted(async () => {
   const data = sessionStorage.getItem('tripPlan')
   if (data) {
     tripPlan.value = JSON.parse(data)
+    const parsedPlan = tripPlan.value
+    selectedMapCity.value = mapCities.value[0] || parsedPlan?.city || ''
     // 加载景点图片
     await loadAttractionPhotos()
     // 等待DOM渲染完成后初始化地图
@@ -440,6 +471,11 @@ const saveChanges = () => {
   if (map) {
     map.destroy()
   }
+  map = null
+  amapApi = null
+  mapMarkers = []
+  mapPolylines = []
+  selectedMapCity.value = mapCities.value[0] || tripPlan.value?.city || ''
   nextTick(() => {
     initMap()
   })
@@ -560,6 +596,51 @@ const handleImageError = (event: Event) => {
   const img = event.target as HTMLImageElement
   // 使用灰色占位图
   img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect width="400" height="300" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="18" fill="%23999"%3E图片加载失败%3C/text%3E%3C/svg%3E'
+}
+
+const getDayCity = (day: TripPlan['days'][number]) => day.city || tripPlan.value?.city || ''
+
+const isValidCoordinate = (longitude: unknown, latitude: unknown) => {
+  const lng = Number(longitude)
+  const lat = Number(latitude)
+  return Number.isFinite(lng) && Number.isFinite(lat) && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90
+}
+
+const collectCityAttractions = (city: string) => {
+  if (!tripPlan.value) return []
+
+  const attractions: any[] = []
+  tripPlan.value.days.forEach((day, dayIndex) => {
+    const dayCity = getDayCity(day)
+    if (city && dayCity !== city) return
+
+    day.attractions.forEach((attraction, attrIndex) => {
+      if (!isValidCoordinate(attraction.location?.longitude, attraction.location?.latitude)) return
+      attractions.push({
+        ...attraction,
+        dayIndex,
+        attrIndex,
+        city: dayCity
+      })
+    })
+  })
+
+  return attractions
+}
+
+const clearMapOverlays = () => {
+  if (!map) return
+  const overlays = [...mapMarkers, ...mapPolylines]
+  if (overlays.length) {
+    map.remove(overlays)
+  }
+  mapMarkers = []
+  mapPolylines = []
+}
+
+const switchMapCity = (city: string) => {
+  selectedMapCity.value = city
+  renderMapForCity(city)
 }
 
 
@@ -867,22 +948,20 @@ const initMap = async () => {
       securityJsCode: import.meta.env.VITE_AMAP_SECURITY_JS_CODE || ''
     }
 
-    const AMap = await AMapLoader.load({
+    amapApi = await AMapLoader.load({
       key: import.meta.env.VITE_AMAP_WEB_KEY, // 从环境变量读取高德地图Web端JS API Key
       version: '2.0',
       plugins: ['AMap.Marker', 'AMap.Polyline', 'AMap.InfoWindow']
     })
 
     // 创建地图实例
-    const firstAttraction = tripPlan.value?.days.flatMap(day => day.attractions).find(attr => attr.location?.longitude && attr.location?.latitude)
-    map = new AMap.Map('amap-container', {
+    map = new amapApi.Map('amap-container', {
       zoom: 12,
-      center: firstAttraction ? [firstAttraction.location.longitude, firstAttraction.location.latitude] : [116.397128, 39.916527],
+      center: [116.397128, 39.916527],
       viewMode: '3D'
     })
 
-    // 添加景点标记
-    addAttractionMarkers(AMap)
+    renderMapForCity(selectedMapCity.value || mapCities.value[0] || tripPlan.value?.city || '')
 
     message.success('地图加载成功')
   } catch (error) {
@@ -894,49 +973,45 @@ const initMap = async () => {
   }
 }
 
-// 添加景点标记
-const addAttractionMarkers = (AMap: any) => {
-  if (!tripPlan.value) return
+const renderMapForCity = (city: string) => {
+  if (!tripPlan.value || !map || !amapApi) return
 
-  const markers: any[] = []
-  const allAttractions: any[] = []
+  clearMapOverlays()
+  const cityAttractions = collectCityAttractions(city)
+  mapStatusMessage.value = city
+    ? `${city}景点地图`
+    : '当前未选择城市'
 
-  // 收集所有景点
-  tripPlan.value.days.forEach((day, dayIndex) => {
-    day.attractions.forEach((attraction, attrIndex) => {
-      if (attraction.location && attraction.location.longitude && attraction.location.latitude) {
-        allAttractions.push({
-          ...attraction,
-          dayIndex,
-          attrIndex
-        })
-      }
-    })
-  })
+  if (!cityAttractions.length) {
+    map.setZoomAndCenter(5, [116.397128, 39.916527])
+    mapStatusMessage.value = city
+      ? `${city}暂无可用坐标，地图已回退到默认视图`
+      : '当前没有可展示的景点坐标'
+    return
+  }
 
-  // 创建标记
-  allAttractions.forEach((attraction, index) => {
-    const marker = new AMap.Marker({
+  cityAttractions.forEach((attraction, index) => {
+    const marker = new amapApi.Marker({
       position: [attraction.location.longitude, attraction.location.latitude],
       title: attraction.name,
       label: {
         content: `<div style="background: #4CAF50; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${index + 1}</div>`,
-        offset: new AMap.Pixel(0, -30)
+        offset: new amapApi.Pixel(0, -30)
       }
     })
 
     // 创建信息窗口
-    const infoWindow = new AMap.InfoWindow({
+    const infoWindow = new amapApi.InfoWindow({
       content: `
         <div style="padding: 10px;">
           <h4 style="margin: 0 0 8px 0;">${attraction.name}</h4>
           <p style="margin: 4px 0;"><strong>地址:</strong> ${attraction.address}</p>
           <p style="margin: 4px 0;"><strong>游览时长:</strong> ${attraction.visit_duration}分钟</p>
           <p style="margin: 4px 0;"><strong>描述:</strong> ${attraction.description}</p>
-          <p style="margin: 4px 0; color: #1890ff;"><strong>第${attraction.dayIndex + 1}天 景点${attraction.attrIndex + 1}</strong></p>
+          <p style="margin: 4px 0; color: #1890ff;"><strong>${attraction.city} · 第${attraction.dayIndex + 1}天 景点${attraction.attrIndex + 1}</strong></p>
         </div>
       `,
-      offset: new AMap.Pixel(0, -30)
+      offset: new amapApi.Pixel(0, -30)
     })
 
     // 点击标记显示信息窗口
@@ -944,23 +1019,16 @@ const addAttractionMarkers = (AMap: any) => {
       infoWindow.open(map, marker.getPosition())
     })
 
-    markers.push(marker)
+    mapMarkers.push(marker)
   })
 
-  // 添加标记到地图
-  map.add(markers)
-
-  // 自动调整视野以包含所有标记
-  if (allAttractions.length > 0) {
-    map.setFitView(markers)
-  }
-
-  // 绘制路线
-  drawRoutes(AMap, allAttractions)
+  map.add(mapMarkers)
+  map.setFitView(mapMarkers)
+  drawRoutes(cityAttractions)
 }
 
 // 绘制路线
-const drawRoutes = (AMap: any, attractions: any[]) => {
+const drawRoutes = (attractions: any[]) => {
   if (attractions.length < 2) return
 
   // 按天分组绘制路线
@@ -981,7 +1049,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
       attr.location.latitude
     ])
 
-    const polyline = new AMap.Polyline({
+    const polyline = new amapApi.Polyline({
       path: path,
       strokeColor: '#1890ff',
       strokeWeight: 4,
@@ -991,6 +1059,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
     })
 
     map.add(polyline)
+    mapPolylines.push(polyline)
   })
 }
 </script>
@@ -1179,9 +1248,41 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   min-height: 520px;
 }
 
+.map-city-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+
+.map-city-switcher-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.map-status-banner {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+}
+
 .map-card :deep(.ant-card-body) {
   height: calc(100% - 57px);
+  display: flex;
+  flex-direction: column;
   padding: 0;
+}
+
+.map-container {
+  width: 100%;
+  flex: 1;
+  min-height: 420px;
 }
 
 .days-card {
