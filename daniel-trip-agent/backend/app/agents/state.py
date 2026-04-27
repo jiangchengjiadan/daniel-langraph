@@ -13,7 +13,10 @@ class TripPlanState(TypedDict, total=False):
     """
 
     # === 输入字段 ===
-    city: str                        # 目的地城市
+    city: str                        # 当前规划城市（兼容单城市逻辑）
+    cities: List[str]                 # 目的地城市列表
+    current_city: str                 # 当前正在处理的城市
+    city_segments: List[Dict]         # 多城市分段信息
     start_date: str                  # 开始日期 (YYYY-MM-DD)
     end_date: str                    # 结束日期 (YYYY-MM-DD)
     travel_days: int                 # 旅行天数

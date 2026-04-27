@@ -35,6 +35,25 @@
       </a-space>
     </div>
 
+    <div v-if="tripPlan" class="planner-summary-bar">
+      <div class="summary-pill">
+        <span class="summary-label">城市</span>
+        <strong>{{ tripPlan.cities?.length || 1 }}</strong>
+      </div>
+      <div class="summary-pill">
+        <span class="summary-label">天数</span>
+        <strong>{{ tripPlan.days.length }}</strong>
+      </div>
+      <div class="summary-pill" v-if="tripPlan.budget">
+        <span class="summary-label">总预算</span>
+        <strong>¥{{ tripPlan.budget.total }}</strong>
+      </div>
+      <div class="summary-pill">
+        <span class="summary-label">规划顺序</span>
+        <strong>{{ displayCities }}</strong>
+      </div>
+    </div>
+
     <div v-if="tripPlan" class="content-wrapper">
       <!-- 侧边导航 -->
       <div class="side-nav">
@@ -68,8 +87,12 @@
           <!-- 左侧:行程概览和预算明细 -->
           <div class="left-info">
             <!-- 行程概览 -->
-            <a-card id="overview" :title="`${tripPlan.city}旅行计划`" :bordered="false" class="overview-card">
+            <a-card id="overview" :title="`${displayCities}旅行计划`" :bordered="false" class="overview-card">
               <div class="overview-content">
+                <div class="info-item">
+                  <span class="info-label">🗺️ 城市:</span>
+                  <span class="info-value">{{ displayCities }}</span>
+                </div>
                 <div class="info-item">
                   <span class="info-label">📅 日期:</span>
                   <span class="info-value">{{ tripPlan.start_date }} 至 {{ tripPlan.end_date }}</span>
@@ -118,6 +141,9 @@
 
         <!-- 每日行程:可折叠 -->
         <a-card title="📅 每日行程" :bordered="false" class="days-card">
+          <template #extra>
+            <span class="days-card-extra">按日期顺序查看每一天的城市、景点、酒店与预算</span>
+          </template>
           <a-collapse v-model:activeKey="activeDays" accordion>
             <a-collapse-panel
               v-for="(day, index) in tripPlan.days"
@@ -127,11 +153,17 @@
               <template #header>
                 <div class="day-header">
                   <span class="day-title">第{{ day.day_index + 1 }}天</span>
-                  <span class="day-date">{{ day.date }}</span>
+                  <span class="day-date">{{ day.city || tripPlan.city }} · {{ day.date }}</span>
                 </div>
               </template>
 
               <!-- 行程基本信息 -->
+              <div class="day-meta-row">
+                <span class="meta-chip">{{ day.city || tripPlan.city }}</span>
+                <span class="meta-chip">{{ day.transportation }}</span>
+                <span class="meta-chip">{{ day.accommodation }}</span>
+              </div>
+
               <div class="day-info">
                 <div class="info-row">
                   <span class="label">📝 行程描述:</span>
@@ -280,6 +312,7 @@
             <a-list-item>
               <a-card size="small" class="weather-card">
                 <div class="weather-date">{{ item.date }}</div>
+                <div class="weather-city">{{ weatherCityByDate[item.date] || tripPlan.city }}</div>
                 <div class="weather-info-row">
                   <span class="weather-icon">☀️</span>
                   <div>
@@ -325,7 +358,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { DownOutlined } from '@ant-design/icons-vue'
@@ -347,6 +380,15 @@ const router = useRouter()
 const tripPlan = ref<TripPlan | null>(null)
 const editMode = ref(false)
 const originalPlan = ref<TripPlan | null>(null)
+const displayCities = computed(() => tripPlan.value?.cities?.length ? tripPlan.value.cities.join(' -> ') : tripPlan.value?.city || '')
+const weatherCityByDate = computed(() => {
+  const mapping: Record<string, string> = {}
+  if (!tripPlan.value) return mapping
+  tripPlan.value.days.forEach(day => {
+    mapping[day.date] = day.city || tripPlan.value!.city
+  })
+  return mapping
+})
 const attractionPhotos = ref<Record<string, string>>({})
 const activeSection = ref('overview')
 const activeDays = ref<number[]>([0]) // 默认展开第一天
@@ -455,8 +497,6 @@ const loadAttractionPhotos = async () => {
   if (!tripPlan.value) return
 
   const promises: Promise<void>[] = []
-  const city = tripPlan.value.city
-
   tripPlan.value.days.forEach(day => {
     day.attractions.forEach(attraction => {
       if (attraction.image_url) {
@@ -464,7 +504,7 @@ const loadAttractionPhotos = async () => {
         return
       }
 
-      const promise = fetch(`http://localhost:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}&city=${encodeURIComponent(city)}`)
+      const promise = fetch(`http://127.0.0.1:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}&city=${encodeURIComponent(day.city || tripPlan.value!.city)}`)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.data.photo_url) {
@@ -650,7 +690,7 @@ const exportAsImage = async () => {
 
     // 转换为图片并下载
     const link = document.createElement('a')
-    link.download = `旅行计划_${tripPlan.value?.city}_${new Date().getTime()}.png`
+    link.download = `旅行计划_${displayCities.value}_${new Date().getTime()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
 
@@ -809,7 +849,7 @@ const exportAsPDF = async () => {
       heightLeft -= 297
     }
 
-    pdf.save(`旅行计划_${tripPlan.value?.city}_${new Date().getTime()}.pdf`)
+    pdf.save(`旅行计划_${displayCities.value}_${new Date().getTime()}.pdf`)
 
     message.success({ content: 'PDF导出成功!', key: 'export' })
   } catch (error: any) {
@@ -818,48 +858,6 @@ const exportAsPDF = async () => {
   }
 }
 
-// 截取地图图片
-const captureMapImage = async () => {
-  if (!map) return
-
-  try {
-    // 获取地图容器
-    const mapContainer = document.getElementById('amap-container')
-    if (!mapContainer) return
-
-    // 使用高德地图的截图功能
-    const mapCanvas = mapContainer.querySelector('canvas')
-    if (mapCanvas) {
-      // 创建一个img元素替换地图容器
-      const img = document.createElement('img')
-      img.src = mapCanvas.toDataURL('image/png')
-      img.style.width = '100%'
-      img.style.height = '500px'
-      img.style.objectFit = 'cover'
-      img.id = 'map-snapshot'
-
-      // 隐藏原地图,显示截图
-      mapContainer.style.display = 'none'
-      mapContainer.parentElement?.appendChild(img)
-    }
-  } catch (error) {
-    console.error('截取地图失败:', error)
-  }
-}
-
-// 恢复地图
-const restoreMap = () => {
-  const mapContainer = document.getElementById('amap-container')
-  const snapshot = document.getElementById('map-snapshot')
-
-  if (mapContainer) {
-    mapContainer.style.display = 'block'
-  }
-
-  if (snapshot) {
-    snapshot.remove()
-  }
-}
 
 // 初始化地图
 const initMap = async () => {
@@ -876,9 +874,10 @@ const initMap = async () => {
     })
 
     // 创建地图实例
+    const firstAttraction = tripPlan.value?.days.flatMap(day => day.attractions).find(attr => attr.location?.longitude && attr.location?.latitude)
     map = new AMap.Map('amap-container', {
       zoom: 12,
-      center: [116.397128, 39.916527], // 默认中心点(北京)
+      center: firstAttraction ? [firstAttraction.location.longitude, firstAttraction.location.latitude] : [116.397128, 39.916527],
       viewMode: '3D'
     })
 
@@ -888,7 +887,10 @@ const initMap = async () => {
     message.success('地图加载成功')
   } catch (error) {
     console.error('地图加载失败:', error)
-    message.error('地图加载失败')
+    const hostHint = window.location.hostname === '127.0.0.1'
+      ? '当前使用 127.0.0.1 访问，若高德 Key 仅配置了 localhost，请改用 http://localhost:5173 打开前端。'
+      : '请检查高德地图 Key、安全密钥和域名白名单配置。'
+    message.error(`地图加载失败：${hostHint}`)
   }
 }
 
@@ -996,17 +998,17 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 <style scoped>
 .result-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  padding: 40px 20px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  padding: 28px 20px 40px;
 }
 
 .page-header {
-  max-width: 1200px;
-  margin: 0 auto 30px;
+  max-width: 1360px;
+  margin: 0 auto 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  animation: fadeInDown 0.6s ease-out;
+  gap: 16px;
 }
 
 .back-button {
@@ -1014,46 +1016,248 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   font-weight: 500;
 }
 
-/* 内容布局 */
-.content-wrapper {
-  max-width: 1400px;
-  margin: 0 auto;
+.planner-summary-bar {
+  max-width: 1360px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-pill {
   display: flex;
-  gap: 24px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.summary-pill strong {
+  font-size: 20px;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.summary-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.content-wrapper {
+  max-width: 1360px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 20px;
 }
 
 .side-nav {
-  width: 240px;
-  flex-shrink: 0;
-}
-
-.side-nav :deep(.ant-menu) {
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  background: white;
-}
-
-.side-nav :deep(.ant-menu-item) {
-  margin: 4px 8px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.side-nav :deep(.ant-menu-item-selected) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.side-nav :deep(.ant-menu-item:hover) {
-  background: rgba(102, 126, 234, 0.1);
-}
-
-.main-content {
-  flex: 1;
   min-width: 0;
 }
 
-/* 景点图片样式 */
+.side-nav :deep(.ant-menu) {
+  border-radius: 8px;
+  padding: 10px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.side-nav :deep(.ant-menu-item),
+.side-nav :deep(.ant-menu-submenu-title) {
+  margin: 2px 6px;
+  border-radius: 8px;
+}
+
+.side-nav :deep(.ant-menu-item-selected) {
+  background: #e8efff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.side-nav :deep(.ant-menu-item:hover),
+.side-nav :deep(.ant-menu-submenu-title:hover) {
+  background: #f8fafc;
+}
+
+.main-content {
+  min-width: 0;
+}
+
+.top-info-section {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.left-info {
+  display: grid;
+  gap: 16px;
+  align-self: start;
+}
+
+.right-map {
+  min-width: 0;
+}
+
+.overview-content {
+  display: grid;
+  gap: 14px;
+}
+
+.info-item {
+  display: grid;
+  gap: 4px;
+}
+
+.info-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.info-value {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #0f172a;
+}
+
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.budget-item {
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.budget-label {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.budget-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.budget-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: #0f172a;
+  border-radius: 8px;
+  color: white;
+}
+
+.total-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.total-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.map-card {
+  min-height: 520px;
+}
+
+.map-card :deep(.ant-card-body) {
+  height: calc(100% - 57px);
+  padding: 0;
+}
+
+.days-card {
+  margin-top: 8px;
+}
+
+.days-card-extra {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.day-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.day-date {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.day-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.day-info {
+  margin-bottom: 18px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.info-row .label {
+  font-weight: 600;
+  color: #64748b;
+}
+
+.info-row .value {
+  color: #0f172a;
+}
+
 .attraction-image-wrapper {
   position: relative;
   margin-bottom: 12px;
@@ -1065,127 +1269,47 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   width: 100%;
   height: 200px;
   object-fit: cover;
-  transition: transform 0.3s ease;
+  transition: transform 0.25s ease;
 }
 
 .attraction-image-wrapper:hover .attraction-image {
-  transform: scale(1.05);
+  transform: scale(1.03);
 }
 
 .attraction-badge {
   position: absolute;
   top: 12px;
   left: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #0f172a;
   color: white;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.badge-number {
-  font-size: 18px;
+  font-weight: 700;
 }
 
 .price-tag {
   position: absolute;
   top: 12px;
   right: 12px;
-  background: rgba(255, 77, 79, 0.9);
+  background: rgba(15, 23, 42, 0.88);
   color: white;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-weight: bold;
-  font-size: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-/* 天气卡片样式 */
-.weather-card {
-  background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
-  border: none !important;
-  transition: all 0.3s ease;
-}
-
-.weather-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
-}
-
-.weather-date {
-  font-size: 16px;
-  font-weight: bold;
-  color: #00796b;
-  margin-bottom: 12px;
-  text-align: center;
-}
-
-.weather-info-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.weather-icon {
-  font-size: 24px;
-}
-
-.weather-label {
+  padding: 4px 10px;
+  border-radius: 999px;
   font-size: 12px;
-  color: #666;
+  font-weight: 700;
 }
 
-.weather-value {
-  font-size: 16px;
-  font-weight: 600;
-  color: #00796b;
-}
-
-.weather-wind {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(0, 121, 107, 0.2);
-  text-align: center;
-  color: #00796b;
-  font-size: 14px;
-}
-
-/* 回到顶部按钮 */
-.back-top-button {
-  width: 50px;
-  height: 50px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.back-top-button:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-}
-
-/* 酒店卡片样式 */
 .hotel-card {
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-  border: none !important;
+  background: #f8fbff;
+  border: 1px solid #dbeafe !important;
 }
 
 .hotel-card :deep(.ant-card-head) {
-  background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+  background: #1d4ed8;
 }
 
 .hotel-title {
@@ -1199,7 +1323,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   margin-bottom: 12px;
   border-radius: 8px;
   overflow: hidden;
-  background: #f0f5ff;
+  background: #eff6ff;
 }
 
 .hotel-image {
@@ -1209,278 +1333,166 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   display: block;
 }
 
-/* 顶部信息区布局 */
-.top-info-section {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 20px;
+.weather-card {
+  background: #f0fdfb;
+  border: 1px solid #ccfbf1 !important;
 }
 
-.left-info {
-  flex: 0 0 400px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.weather-date {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f766e;
+  margin-bottom: 4px;
+  text-align: center;
 }
 
-.right-map {
-  flex: 1;
-}
-
-/* 行程概览卡片 */
-.overview-card {
-  height: fit-content;
-}
-
-.overview-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.info-label {
-  font-size: 14px;
+.weather-city {
+  margin-bottom: 10px;
+  text-align: center;
+  font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: #64748b;
 }
 
-.info-value {
+.weather-info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.weather-icon {
+  font-size: 22px;
+}
+
+.weather-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.weather-value {
   font-size: 15px;
-  color: #333;
-  line-height: 1.6;
+  font-weight: 600;
+  color: #0f766e;
 }
 
-/* 预算卡片 */
-.budget-card {
-  height: fit-content;
+.weather-wind {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 118, 110, 0.15);
+  text-align: center;
+  color: #0f766e;
+  font-size: 13px;
 }
 
-.budget-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+.back-top-button {
+  width: 46px;
+  height: 46px;
+  background: #0f172a;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+}
+
+:deep(.ant-card) {
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
   margin-bottom: 16px;
 }
 
-.budget-item {
-  text-align: center;
-  padding: 12px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-}
-
-.budget-label {
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.budget-value {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1890ff;
-}
-
-.budget-total {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px;
-  color: white;
-}
-
-.total-label {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.total-value {
-  font-size: 28px;
-  font-weight: 700;
-}
-
-/* 地图卡片 */
-.map-card {
-  height: 100%;
-  min-height: 500px;
-}
-
-.map-card :deep(.ant-card-body) {
-  height: calc(100% - 57px);
-  padding: 0;
-}
-
-/* 每日行程卡片 */
-.days-card {
-  margin-top: 20px;
-}
-
-.day-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.day-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-}
-
-.day-date {
-  font-size: 14px;
-  color: #999;
-}
-
-.day-info {
-  margin-bottom: 20px;
-  padding: 16px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-}
-
-.info-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.info-row:last-child {
-  margin-bottom: 0;
-}
-
-.info-row .label {
-  font-weight: 600;
-  color: #666;
-  min-width: 100px;
-}
-
-.info-row .value {
-  color: #333;
-  flex: 1;
-}
-
-/* 卡片样式优化 */
-:deep(.ant-card) {
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  margin-bottom: 20px;
-  transition: all 0.3s ease;
-  animation: fadeInUp 0.6s ease-out;
-}
-
-:deep(.ant-card:hover) {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-
 :deep(.ant-card-head) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white !important;
-  border-radius: 12px 12px 0 0;
-  font-weight: 600;
+  background: white;
+  color: #0f172a !important;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 8px 8px 0 0;
 }
 
 :deep(.ant-card-head-title) {
-  color: white !important;
-  font-size: 18px;
+  color: #0f172a !important;
+  font-size: 16px;
+  font-weight: 700;
 }
 
-:deep(.ant-card-head-title span) {
-  color: white !important;
-}
-
-/* Collapse样式 */
 :deep(.ant-collapse) {
   border: none;
   background: transparent;
 }
 
 :deep(.ant-collapse-item) {
-  margin-bottom: 16px;
-  border: 1px solid #e8e8e8;
-  border-radius: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 :deep(.ant-collapse-header) {
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  padding: 16px 20px !important;
-  font-weight: 600;
+  background: #f8fafc;
+  padding: 16px 18px !important;
 }
 
 :deep(.ant-collapse-content) {
-  border-top: 1px solid #e8e8e8;
+  border-top: 1px solid #e2e8f0;
 }
 
 :deep(.ant-collapse-content-box) {
-  padding: 20px;
+  padding: 18px;
 }
 
-/* 统计卡片样式 */
-:deep(.ant-statistic-title) {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-:deep(.ant-statistic-content) {
-  font-size: 24px;
-  font-weight: 600;
-  color: #1890ff;
-}
-
-/* 景点卡片样式 */
 :deep(.ant-list-item) {
-  transition: all 0.3s ease;
+  transition: transform 0.2s ease;
 }
 
 :deep(.ant-list-item:hover) {
-  transform: scale(1.02);
+  transform: translateY(-2px);
 }
 
-/* 动画 */
-@keyframes fadeInDown {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
+@media (max-width: 1100px) {
+  .content-wrapper {
+    grid-template-columns: 1fr;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
+  .side-nav {
+    display: none;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .top-info-section {
+    grid-template-columns: 1fr;
+  }
+
+  .planner-summary-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* 响应式设计 */
 @media (max-width: 768px) {
   .result-container {
-    padding: 20px 10px;
+    padding: 18px 12px 30px;
   }
 
   .page-header {
     flex-direction: column;
-    gap: 16px;
+    align-items: stretch;
+  }
+
+  .planner-summary-bar,
+  .budget-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .day-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .info-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>
